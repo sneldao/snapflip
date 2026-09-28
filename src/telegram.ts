@@ -202,11 +202,24 @@ async function readSnap(env: Env, chatId: number, fileId: string, mediaType: Ima
     );
     return;
   }
+  // A confident read of an item we don't list is a catalog gap, not a bad photo — say what we saw.
+  const demand: Buttons = [[{ text: "What's in demand", url: `${env.PUBLIC_URL}/` }]];
+  if (id.title && id.confidence >= CONFIDENCE_THRESHOLD) {
+    await edit(
+      env,
+      chatId,
+      statusId,
+      `Spotted <b>${esc(id.title)}</b>.\nIt's not in the SnapFlip catalog yet, so no agents are hunting it.\n▸ Leave it on the rack — or snap the next cart.`,
+      demand,
+    );
+    return;
+  }
   await edit(
     env,
     chatId,
     statusId,
-    `Couldn't match that to the catalog.\n▸ Try again with the label facing the camera — or <a href="${esc(env.PUBLIC_URL)}/">see what's in demand</a>.`,
+    `Couldn't make out the label${id.title ? ` — looks like <b>${esc(id.title)}</b>, but I'm not sure` : ""}.\n▸ Try again with the label flat, well lit and filling the frame.`,
+    demand,
   );
 }
 
