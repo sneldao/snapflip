@@ -1,5 +1,5 @@
 {
-  "name": "snapflip",
+  "name": "go",
   "main": "src/index.ts",
   "compatibility_date": "2026-09-01",
   "compatibility_flags": ["nodejs_compat"],
@@ -34,7 +34,7 @@
   // Non-secret config. Secrets: see .dev.vars.example (local) / `wrangler secret put` (deployed).
   "vars": {
     "ENVIRONMENT": "production",
-    "PUBLIC_URL": "https://snapflip.snapflip.workers.dev",
+    "PUBLIC_URL": "https://go.snapflip.workers.dev",
     "CLAUDE_MODEL": "claude-sonnet-4-5",
     "SELLER_FEE_BPS": "1000"
   }
