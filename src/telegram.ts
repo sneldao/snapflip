@@ -17,8 +17,11 @@ interface TgMessage {
   chat: { id: number };
   text?: string;
   photo?: { file_id: string; width: number; height: number }[];
+  document?: { file_id: string; mime_type?: string };
   reply_markup?: { inline_keyboard: Buttons };
 }
+type ImageType = "image/jpeg" | "image/png" | "image/webp";
+const VISION_TYPES: string[] = ["image/jpeg", "image/png", "image/webp"];
 interface TgUpdate {
   message?: TgMessage;
   callback_query?: { id: string; data?: string; message?: TgMessage };
@@ -155,20 +158,27 @@ function identifyOptions(id: Identification): { skuId: string; title: string }[]
   return out;
 }
 
-async function handlePhoto(env: Env, msg: TgMessage): Promise<void> {
-  const chatId = msg.chat.id;
-  const sellerId = await upsertSeller(env, chatId);
-  const largest = msg.photo!.reduce((a, b) => (a.width * a.height > b.width * b.height ? a : b));
+/** Photos arrive as compressed `photo` (always JPEG) or, when sent as a file, as an image `document`. */
+async function handlePhoto(env: Env, chatId: number, fileId: string, mediaType: ImageType): Promise<void> {
   const statusId = await send(env, chatId, "&gt; reading label…");
+  try {
+    await readSnap(env, chatId, fileId, mediaType, statusId);
+  } catch (e) {
+    await edit(env, chatId, statusId, "Couldn't read that snap — something hiccuped on my end.\n▸ Send the photo again.");
+    throw e;
+  }
+}
 
-  const file = await tg<{ file_path: string }>(env, "getFile", { file_id: largest.file_id });
+async function readSnap(env: Env, chatId: number, fileId: string, mediaType: ImageType, statusId: number | undefined): Promise<void> {
+  const sellerId = await upsertSeller(env, chatId);
+  const file = await tg<{ file_path: string }>(env, "getFile", { file_id: fileId });
   const photo = await (await fetch(`https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${file.file_path}`)).arrayBuffer();
   const snapId = newId("sn");
-  const r2Key = `snaps/${snapId}.jpg`;
-  await env.PHOTOS.put(r2Key, photo, { httpMetadata: { contentType: "image/jpeg" } });
+  const r2Key = `snaps/${snapId}.${mediaType.split("/")[1].replace("jpeg", "jpg")}`;
+  await env.PHOTOS.put(r2Key, photo, { httpMetadata: { contentType: mediaType } });
 
   await typing(env, chatId);
-  const id = await identify(env, photo);
+  const id = await identify(env, photo, mediaType);
   // Persist the snap up front (SKU still unknown) so a picker callback can resolve it later.
   await env.DB.prepare("INSERT INTO snaps (id, seller_id, r2_key, confidence) VALUES (?, ?, ?, ?)")
     .bind(snapId, sellerId, r2Key, id.confidence)
@@ -214,7 +224,8 @@ async function finalizeIdentification(env: Env, chatId: number, snapId: string, 
   }
   await edit(env, chatId, statusMsgId, `&gt; grading <b>${esc(title)}</b>…`);
   await typing(env, chatId);
-  const g = await grade(env, await obj.arrayBuffer(), title);
+  const ct = obj.httpMetadata?.contentType ?? "image/jpeg";
+  const g = await grade(env, await obj.arrayBuffer(), title, (VISION_TYPES.includes(ct) ? ct : "image/jpeg") as ImageType);
   await env.DB.prepare("UPDATE snaps SET sku_id = ?, grade = ?, grade_notes = ?, flags_json = ? WHERE id = ?")
     .bind(skuId, g.grade, g.notes, JSON.stringify(g.flags), snapId)
     .run();
@@ -310,7 +321,17 @@ async function handleUpdate(env: Env, u: TgUpdate): Promise<void> {
 
   const msg = u.message;
   if (!msg) return;
-  if (msg.photo?.length) return handlePhoto(env, msg);
+  if (msg.photo?.length) {
+    const largest = msg.photo.reduce((a, b) => (a.width * a.height > b.width * b.height ? a : b));
+    return handlePhoto(env, msg.chat.id, largest.file_id, "image/jpeg");
+  }
+  const mime = msg.document?.mime_type ?? "";
+  if (msg.document && VISION_TYPES.includes(mime)) return handlePhoto(env, msg.chat.id, msg.document.file_id, mime as ImageType);
+  if (msg.document && mime.startsWith("image/")) {
+    // e.g. iPhone HEIC sent as a file — vision can't read it, but Telegram converts compressed photos to JPEG.
+    await send(env, msg.chat.id, "I can't read that image format.\n▸ Send it as a <b>photo</b> (not a file) and Telegram converts it for me.");
+    return;
+  }
 
   const text = msg.text?.trim() ?? "";
   // Buyer linking: t.me/<bot>?start=<buyerId>
