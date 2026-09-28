@@ -91,6 +91,28 @@ CREATE TABLE IF NOT EXISTS bids (
 );
 CREATE INDEX IF NOT EXISTS idx_bids_auction ON bids(auction_id);
 
+-- Monetisation ledger. One row per settled auction, snapshotting the fee basis points
+-- so later SELLER_FEE_BPS changes never rewrite history. Written by persistAndSettle;
+-- release() pays out clearing minus this row's fee_cents.
+CREATE TABLE IF NOT EXISTS platform_fees (
+  auction_id TEXT PRIMARY KEY REFERENCES auctions(id),
+  clearing_cents INTEGER NOT NULL,
+  fee_bps INTEGER NOT NULL,
+  fee_cents INTEGER NOT NULL,
+  express_fee_cents INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
+-- Buyer Plus ($6/mo). One row per buyer; status mirrors the Stripe subscription.
+-- Entitlement = status in ('active','trialing') and period end in the future.
+CREATE TABLE IF NOT EXISTS subscriptions (
+  buyer_id TEXT PRIMARY KEY REFERENCES buyers(id),
+  stripe_subscription_id TEXT,
+  status TEXT NOT NULL DEFAULT 'active',   -- active | trialing | past_due | canceled | stub
+  current_period_end TEXT,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
 -- Model response cache. Key = SHA-256(system prompt + request content), so a
 -- webhook retry or a seller re-sending the same photo replays at zero tokens.
 CREATE TABLE IF NOT EXISTS llm_cache (

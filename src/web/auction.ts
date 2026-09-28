@@ -52,6 +52,7 @@ auctionPage.get("/a/:id", (c) =>
           <div class="big" id="price">$0</div>
           <div class="hp" id="hp"><i id="hpfill"></i><span class="seg"></span></div>
           <div class="muted"><span id="active">0</span> agents still bidding &middot; <span id="left">60</span>s left</div>
+          <div class="muted" id="netline"></div>
           <div id="call" hidden></div>
           <div id="verdict" hidden></div>
         </div>
@@ -148,6 +149,12 @@ auctionPage.get("/a/:id", (c) =>
             p.classList.remove("tick"); void p.offsetWidth; p.classList.add("tick");
           }
           $("active").textContent = v.active.length;
+          (function () {
+            var bps = v.feeBps || 1000;
+            var fee = Math.round((v.priceCents * bps) / 10000);
+            $("netline").textContent = "Seller nets " + usd(v.priceCents - fee) +
+              " after " + (bps / 100) + "% SnapFlip fee" + (v.winner ? " · final" : " · live");
+          })();
           badge(v.status);
           var call = $("call");
           if (v.closing && !wasClosing) {
@@ -169,7 +176,8 @@ auctionPage.get("/a/:id", (c) =>
           if (v.winner && !seen.has("w")) {
             seen.add("w");
             feed(v.winner.label + " won at " + usd(v.winner.priceCents), "win");
-            verdict.textContent = "SOLD " + usd(v.winner.priceCents) + " — " + v.winner.label;
+            verdict.textContent = "SOLD " + usd(v.winner.priceCents) + " — " + v.winner.label +
+              (v.winner.netCents !== undefined ? " · seller nets " + usd(v.winner.netCents) : "");
             verdict.className = "win"; verdict.hidden = false; flash();
           } else if (v.status === "no_sale" && !seen.has("n")) {
             seen.add("n");
@@ -199,7 +207,7 @@ auctionPage.get("/a/:id", (c) =>
         }
         connect();
       </script>`,
-      { crt: true },
+      { crt: true, image: `${c.env.PUBLIC_URL}/og.png` },
     ),
   ),
 );

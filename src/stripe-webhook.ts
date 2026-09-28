@@ -6,6 +6,13 @@ import type { App } from "./lib/util";
 
 export const stripeWebhook = new Hono<App>();
 
+/** current_period_end moved across Stripe API versions — read it defensively. */
+function subPeriodEndIso(sub: Stripe.Subscription): string | null {
+  const s = sub as unknown as { current_period_end?: number; items?: { data?: { current_period_end?: number }[] } };
+  const ts = s.current_period_end ?? s.items?.data?.[0]?.current_period_end;
+  return ts ? new Date(ts * 1000).toISOString() : null;
+}
+
 stripeWebhook.post("/webhooks/stripe", async (c) => {
   const sig = c.req.header("stripe-signature");
   if (!sig) return c.text("missing signature", 400);
@@ -22,7 +29,22 @@ stripeWebhook.post("/webhooks/stripe", async (c) => {
   switch (event.type) {
     case "checkout.session.completed": {
       const session = event.data.object;
-      if (session.mode !== "setup" || !session.setup_intent || !session.client_reference_id) break;
+      if (!session.client_reference_id) break;
+      if (session.mode === "subscription" && session.subscription) {
+        // Buyer Plus: mirror the subscription row from Stripe (source of truth).
+        const sub = await s.subscriptions.retrieve(session.subscription as string);
+        await c.env.DB.prepare(
+          `INSERT OR REPLACE INTO subscriptions (buyer_id, stripe_subscription_id, status, current_period_end)
+           VALUES (?, ?, ?, ?)`,
+        ).bind(
+          session.client_reference_id,
+          sub.id,
+          sub.status,
+          subPeriodEndIso(sub),
+        ).run();
+        break;
+      }
+      if (session.mode !== "setup" || !session.setup_intent) break;
       const si = await s.setupIntents.retrieve(session.setup_intent as string);
       await c.env.DB.prepare("UPDATE buyers SET payment_method_id = ? WHERE id = ?")
         .bind(si.payment_method as string, session.client_reference_id)
@@ -40,8 +62,16 @@ stripeWebhook.post("/webhooks/stripe", async (c) => {
       }
       break;
     }
-    case "account.updated": {
-      const account = event.data.object;
+    // Buyer Plus lifecycle: keep the entitlement row in sync with Stripe.
+    case "customer.subscription.updated":
+    case "customer.subscription.deleted": {
+      const sub = event.data.object;
+      await c.env.DB.prepare(
+        "UPDATE subscriptions SET status = ?, current_period_end = ? WHERE stripe_subscription_id = ?",
+      ).bind(sub.status, subPeriodEndIso(sub), sub.id).run();
+      break;
+    }
+    case "account.updated": {      const account = event.data.object;
       await c.env.DB.prepare("UPDATE sellers SET payouts_enabled = ? WHERE stripe_account_id = ?")
         .bind(account.payouts_enabled ? 1 : 0, account.id)
         .run();

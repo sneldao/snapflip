@@ -3,9 +3,22 @@ import { Hono } from "hono";
 import { html, raw } from "hono/html";
 import QRCode from "qrcode";
 import { layout, soonRail } from "./layout";
+import { OG_PNG_BASE64 } from "./og-image";
 import type { App } from "../lib/util";
 
 export const landing = new Hono<App>();
+
+/** Share card: served from the bundle so it works with zero R2 setup. */
+let ogBytes: Uint8Array | null = null;
+landing.get("/og.png", () => {
+  if (!ogBytes) {
+    const bin = atob(OG_PNG_BASE64);
+    ogBytes = Uint8Array.from(bin, (ch) => ch.charCodeAt(0));
+  }
+  return new Response(ogBytes.buffer as ArrayBuffer, {
+    headers: { "content-type": "image/png", "cache-control": "public, max-age=86400" },
+  });
+});
 
 /** Live stats for the public pages. Excludes seeded b_demo_* buyers: the demo needs real numbers only. */
 landing.get("/api/stats", async (c) => {
@@ -34,6 +47,21 @@ landing.get("/api/stats", async (c) => {
         AND COALESCE(o.buyer_id, '') NOT LIKE 'b_demo_%'
       ORDER BY a.ended_at DESC LIMIT 8`,
   ).all<{ status: string; clearing_cents: number | null; ended_at: string; title: string | null }>();
+  const { results: catalog } = await c.env.DB.prepare(
+    `SELECT title, platform FROM skus ORDER BY title LIMIT 12`,
+  ).all<{ title: string; platform: string }>();
+  // Protocol revenue from the fee ledger. Missing table (pre-ledger DBs) → zeros, not a 500.
+  let revenue = { transactions: 0, grossCents: 0, feesCents: 0 };
+  try {
+    const rev = await c.env.DB.prepare(
+      `SELECT COUNT(*) AS transactions, COALESCE(SUM(pf.clearing_cents), 0) AS gross_cents, COALESCE(SUM(pf.fee_cents), 0) AS fees_cents
+         FROM platform_fees pf JOIN auctions a ON a.id = pf.auction_id
+         LEFT JOIN orders o ON o.id = a.winner_order_id
+        WHERE a.status IN ('captured', 'released') AND a.payment_intent_id NOT LIKE 'pi_stub_%'
+          AND COALESCE(o.buyer_id, '') NOT LIKE 'b_demo_%'`,
+    ).first<{ transactions: number; gross_cents: number; fees_cents: number }>();
+    if (rev) revenue = { transactions: rev.transactions, grossCents: rev.gross_cents, feesCents: rev.fees_cents };
+  } catch { /* pre-ledger database: revenue stays zero */ }
   return c.json({
     collectors: totals?.collectors ?? 0,
     demandCents: totals?.demand_cents ?? 0,
@@ -41,6 +69,8 @@ landing.get("/api/stats", async (c) => {
     transactions: tx?.transactions ?? 0,
     transactedCents: tx?.transacted_cents ?? 0,
     recent,
+    catalog,
+    revenue,
   });
 });
 
@@ -68,21 +98,26 @@ const tapeScript = html`<script>
     if (!reel) return;
     var reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
     var timer = null;
+    var paused = false; // IntersectionObserver pauses the tape off-screen
+    var looped = false; // auto-loop runs once; further viewings use ▸ replay
     var priceEl = document.getElementById("stage-price");
     var stampEl = document.getElementById("stamp");
+    var clockEl = document.getElementById("clock-fill");
     function stageReset() {
-      if (priceEl) priceEl.textContent = "—";
+      if (priceEl) priceEl.textContent = "$6";
       if (stampEl) stampEl.classList.remove("on");
+      if (clockEl) clockEl.style.width = "0%";
       for (var k = 1; k <= 5; k++) {
         var b = document.getElementById("sb" + k);
         if (b) b.classList.remove("out", "win");
       }
     }
-    function stageApply(e) {
+    function stageApply(e, idx) {
       if (e.price !== undefined && priceEl) {
         priceEl.textContent = "$" + e.price;
         if (!reduce) { priceEl.classList.remove("tick"); void priceEl.offsetWidth; priceEl.classList.add("tick"); }
       }
+      if (clockEl) clockEl.style.width = Math.round((100 * (idx + 1)) / TAPE.length) + "%";
       if (e.out) {
         e.out.forEach(function (n) {
           var b = document.getElementById("sb" + n);
@@ -93,6 +128,7 @@ const tapeScript = html`<script>
         var w = document.getElementById("sb5");
         if (w) w.classList.add("win");
         if (stampEl) stampEl.classList.add("on");
+        if (clockEl) clockEl.style.width = "100%";
       }
     }
     function line(tag, cls, txt) {
@@ -117,17 +153,34 @@ const tapeScript = html`<script>
       stageReset();
       var i = 0;
       (function next() {
-        if (document.hidden) { timer = setTimeout(next, 500); return; }
-        stageApply(TAPE[i]);
+        if (document.hidden || paused) { timer = setTimeout(next, 500); return; }
+        stageApply(TAPE[i], i);
         var dur = line(TAPE[i].tag, TAPE[i].cls, TAPE[i].txt);
         if (++i < TAPE.length) { timer = setTimeout(next, dur + (document.body.classList.contains("turbo") ? 220 : 900)); }
         else {
           if (btn) btn.hidden = false;
-          timer = setTimeout(play, 4000); // hold the SOLD frame, then loop
+          if (!looped) { looped = true; timer = setTimeout(play, 6000); } // hold SOLD, loop once, then rest
         }
       })();
     }
-    if (btn) btn.addEventListener("click", function () { clearTimeout(timer); btn.hidden = true; play(); });
+    if (btn) btn.addEventListener("click", function () { clearTimeout(timer); btn.hidden = true; looped = false; play(); });
+    // Pause off-screen so the tape never shouts over reading.
+    if ("IntersectionObserver" in window) {
+      new IntersectionObserver(function (entries) {
+        paused = !entries[0].isIntersecting;
+      }).observe(reel);
+    }
+    function enableTurbo() {
+      document.body.classList.add("turbo");
+      if (!document.querySelector(".turbo-badge")) {
+        var badge = document.createElement("div");
+        badge.className = "turbo-badge";
+        badge.textContent = "TURBO MODE ▸▸";
+        document.body.appendChild(badge);
+      }
+    }
+    // Booth operators have no keyboard: /?turbo=1 speeds the tape live.
+    if (/[?&]turbo=1/.test(location.search)) enableTurbo();
     // Konami code → turbo mode: instant tape, glow boost, badge. Judges who find it will talk about it.
     var seq = ["ArrowUp", "ArrowUp", "ArrowDown", "ArrowDown", "ArrowLeft", "ArrowRight", "ArrowLeft", "ArrowRight", "b", "a"];
     var ki = 0;
@@ -135,13 +188,7 @@ const tapeScript = html`<script>
       ki = e.key === seq[ki] ? ki + 1 : e.key === seq[0] ? 1 : 0;
       if (ki !== seq.length) return;
       ki = 0;
-      document.body.classList.add("turbo");
-      if (!document.querySelector(".turbo-badge")) {
-        var b = document.createElement("div");
-        b.className = "turbo-badge";
-        b.textContent = "TURBO MODE ▸▸";
-        document.body.appendChild(b);
-      }
+      enableTurbo();
       clearTimeout(timer);
       play();
     });
@@ -176,6 +223,10 @@ const statsScript = html`<script>
       if (k < 1) requestAnimationFrame(step);
     });
   }
+  function setText(id, txt) {
+    var el = document.getElementById(id);
+    if (el) el.textContent = txt;
+  }
   var dollars = function (v) { return "$" + v.toLocaleString(); };
   var plain = function (v) { return "" + v; };
   async function refresh() {
@@ -184,9 +235,25 @@ const statsScript = html`<script>
       const r = await fetch("/api/stats");
       if (!r.ok) return;
       const ob = await r.json();
-      animate("demand", Math.round(ob.demandCents / 100), dollars);
+      var demand = Math.round(ob.demandCents / 100);
+      animate("demand", demand, dollars);
+      animate("demand-top", demand, dollars);
       animate("collectors", ob.collectors, plain);
+      animate("collectors-top", ob.collectors, plain);
       animate("tx", ob.transactions, plain);
+      animate("tx-top", ob.transactions, plain);
+      setText("hero-demand", dollars(demand) + " standing · " + ob.collectors + (ob.collectors === 1 ? " collector" : " collectors"));
+      var bookLive = demand > 0 || (ob.collectors || 0) > 0 || (ob.transactions || 0) > 0;
+      if (!bookLive) setText("hero-demand", "order book opens live — be #1");
+      var statsRow = document.getElementById("ob-stats");
+      if (statsRow) statsRow.hidden = !bookLive;
+      if (ob.revenue) {
+        var rev = "$" + Math.round((ob.revenue.feesCents || 0) / 100).toLocaleString();
+        var gross = "$" + Math.round((ob.revenue.grossCents || 0) / 100).toLocaleString();
+        setText("revenue-line", "Protocol revenue so far: " + rev + " (10% of " + gross + " across " + ob.revenue.transactions + " real sales) — every sale pays for the demo.");
+      }
+      const dot = document.getElementById("live-dot");
+      if (dot) dot.classList.toggle("hot", (ob.collectors || 0) > 0 || (ob.transactions || 0) > 0);
       const cols = document.getElementById("ob-cols");
       const empt = document.getElementById("ob-empty");
       if (cols && empt) {
@@ -224,6 +291,17 @@ const statsScript = html`<script>
           }));
         }
       }
+      const cat = document.getElementById("catalog-chips");
+      if (cat && ob.catalog && ob.catalog.length && !cat.dataset.filled) {
+        cat.dataset.filled = "1";
+        cat.replaceChildren(...ob.catalog.slice(0, 8).map((s) => {
+          const a = document.createElement("a");
+          a.className = "chip";
+          a.href = "/buy?sku=" + encodeURIComponent(s.title);
+          a.textContent = s.title;
+          return a;
+        }));
+      }
       const tape = document.getElementById("tape");
       if (tape) {
         if (!ob.recent || !ob.recent.length) {
@@ -245,42 +323,358 @@ const statsScript = html`<script>
   document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
 </script>`;
 
+const tourCamScript = html`<script>
+  (function () {
+    var reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    var route = document.getElementById("tour-route");
+    var focal = document.getElementById("tour-focal");
+    var scaleG = document.getElementById("pov-scale");
+    var panG = document.getElementById("pov-pan");
+    var priceEl = document.getElementById("stage-price");
+    var clockEl = document.getElementById("clock-fill");
+    var stampEl = document.getElementById("stamp");
+    var beats = Array.prototype.slice.call(document.querySelectorAll(".tour-beat"));
+    // Single tape model: stage facts (price, dropouts, sold) derive from the same
+    // DEMO_TAPE the autoplay reel types out, so the two can never drift. Only the
+    // camera zoom per beat is tour-specific.
+    var TAPE = ${raw(JSON.stringify(DEMO_TAPE))};
+    var BEAT_TAPE_IDX = [0, 0, 4, 6, 8, 9];
+    var BEAT_ZOOM = [1.5, 2.6, 3.1, 2.7, 2.2, 1.4];
+    var states = BEAT_TAPE_IDX.map(function (idx, b) {
+      var price = "$6", out = [], sold = false;
+      for (var j = 0; j <= Math.min(idx, TAPE.length - 1); j++) {
+        if (TAPE[j].price !== undefined) price = "$" + TAPE[j].price;
+        if (TAPE[j].out) out = out.concat(TAPE[j].out);
+        if (TAPE[j].sold) sold = true;
+      }
+      return { s: BEAT_ZOOM[b] || 1.5, price: price, clock: Math.round((100 * (idx + 1)) / TAPE.length), out: out, sold: sold };
+    });
+    var len = 0;
+    try { len = route.getTotalLength(); } catch (e) { len = 0; }
+    var active = -1;
+    function applyStage(i) {
+      var st = states[Math.max(0, Math.min(states.length - 1, i))];
+      if (!st) return;
+      if (priceEl) priceEl.textContent = st.price;
+      if (clockEl) clockEl.style.width = st.clock + "%";
+      for (var k = 1; k <= 5; k++) {
+        var b = document.getElementById("sb" + k);
+        if (!b) continue;
+        b.classList.toggle("out", st.out.indexOf(k) !== -1);
+        b.classList.toggle("win", st.sold && k === 5);
+      }
+      if (stampEl) stampEl.classList.toggle("on", !!st.sold);
+    }
+    function camFor(p) {
+      // Interpolate zoom across beats; pan follows the route focal point.
+      var seg = p * (states.length - 1);
+      var i0 = Math.max(0, Math.min(states.length - 2, Math.floor(seg)));
+      var f = Math.max(0, Math.min(1, seg - i0));
+      var s = states[i0].s + (states[i0 + 1].s - states[i0].s) * f;
+      var pt = { x: 500, y: 500 };
+      if (len && route && route.getPointAtLength) {
+        try { pt = route.getPointAtLength(p * len); } catch (e) { /* static frame */ }
+      }
+      if (reduce) { s = 1; pt = { x: 500, y: 500 }; }
+      if (focal) { focal.setAttribute("cx", pt.x); focal.setAttribute("cy", pt.y); }
+      if (panG) panG.setAttribute("transform", "translate(" + (500 - pt.x) + " " + (500 - pt.y) + ")");
+      if (scaleG) scaleG.setAttribute("transform", "translate(500 500) scale(" + s.toFixed(3) + ") translate(-500 -500)");
+    }
+    var ticking = false;
+    function onScroll() {
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(function () {
+        ticking = false;
+        var max = Math.max(1, document.documentElement.scrollHeight - innerHeight);
+        var p = Math.max(0, Math.min(1, scrollY / max));
+        camFor(p);
+      });
+    }
+    if ("IntersectionObserver" in window) {
+      var io = new IntersectionObserver(function (entries) {
+        entries.forEach(function (en) {
+          if (!en.isIntersecting) return;
+          var i = beats.indexOf(en.target);
+          if (i !== -1 && i !== active) {
+            active = i;
+            beats.forEach(function (el, j) { el.classList.toggle("active", j === i); });
+            applyStage(i);
+          }
+        });
+      }, { rootMargin: "-42% 0px -42% 0px" });
+      beats.forEach(function (el) { io.observe(el); });
+    } else if (beats.length) {
+      beats[0].classList.add("active");
+      applyStage(0);
+    }
+    addEventListener("scroll", onScroll, { passive: true });
+    addEventListener("resize", onScroll);
+    camFor(0);
+    applyStage(0);
+  })();
+</script>`;
+
 landing.get("/", async (c) => {
   const buyUrl = `${c.env.PUBLIC_URL}/buy`;
   const qr = await qrSvg(buyUrl, 1);
   const tg = c.env.TELEGRAM_BOT_USERNAME;
+  const tgUrl = tg ? `https://t.me/${tg}` : "/buy";
+  if (c.req.query("tour") === "1") {
+    return c.html(html`<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#070a08" />
+    <meta name="description" content="SnapFlip cinematic tour — follow a $6 thrift find to a $38 sale as you scroll." />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="SnapFlip tour: $6 → $38 as you scroll" />
+    <meta property="og:description" content="SnapFlip cinematic tour — follow a $6 thrift find to a $38 sale as you scroll." />
+    <meta property="og:image" content="${c.env.PUBLIC_URL}/og.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <title>SnapFlip tour: $6 → $38 as you scroll</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;800&family=Share+Tech+Mono&family=VT323&display=swap" rel="stylesheet" />
+    <style>
+      :root { color-scheme: dark; --bg: #070a08; --panel: #0d130e; --line: #1f3a28; --line-hi: #2f5a3c;
+        --ink: #d8ecd9; --muted: #7fa08a; --phos: #46ff8f; --phos-dim: #1e7a46; --amber: #ffb000; --red: #ff5f5f;
+        --font-body: "Share Tech Mono", ui-monospace, monospace; --font-display: "Orbitron", ui-monospace, monospace;
+        --font-num: "VT323", ui-monospace, monospace; }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink); font-family: var(--font-body); }
+      .fixed-bg { width: 100vw; height: 100vh; position: fixed; inset: 0; overflow: hidden; background: #000; z-index: 0; }
+      .fixed-bg svg { border-radius: 2.5vh; width: 50%; top: 5%; height: 90%; position: absolute; left: 25%;
+        background: #070a08; border: 1px solid var(--line); }
+      @media (max-aspect-ratio: 1.5) { .fixed-bg svg { left: 9%; width: 82%; } }
+      .hud { position: fixed; inset: 0; z-index: 2; pointer-events: none; }
+      .hud .frame { position: absolute; inset: 4vh 6vw; border: 1px solid rgba(70,255,143,0.22); border-radius: 12px; }
+      .hud .frame::before, .hud .frame::after { content: ""; position: absolute; width: 22px; height: 22px; border: 2px solid var(--phos); }
+      .hud .frame::before { top: -2px; left: -2px; border-right: 0; border-bottom: 0; }
+      .hud .frame::after { bottom: -2px; right: -2px; border-left: 0; border-top: 0; }
+      .hud-top { position: absolute; top: calc(4vh + 12px); left: 0; right: 0; display: flex; justify-content: center; }
+      .hud-pill { pointer-events: auto; display: inline-flex; align-items: center; gap: 8px; font-family: var(--font-display);
+        font-size: 0.68rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted);
+        border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px; background: rgba(7,10,8,0.8); text-decoration: none; }
+      .hud-hint { position: absolute; bottom: calc(4vh + 10px); left: 0; right: 0; text-align: center;
+        font-family: var(--font-display); font-size: 0.68rem; letter-spacing: 0.3em; color: var(--muted); text-transform: uppercase;
+        animation: pulse 1.8s ease-in-out infinite; }
+      .tour-scroll { width: 100vw; position: relative; z-index: 1; }
+      .tour-beat { min-height: 100vh; display: flex; align-items: center; padding: 12vh 6vw; }
+      .tour-beat:nth-child(even) { justify-content: flex-end; }
+      .beat-card { max-width: 430px; width: min(430px, 88vw); background: rgba(13,19,14,0.9); backdrop-filter: blur(6px);
+        border: 1px solid var(--line); border-radius: 8px; padding: 18px 20px;
+        opacity: 0.35; transform: translateY(14px); transition: opacity 0.5s ease, transform 0.5s ease, border-color 0.5s ease; }
+      .tour-beat.active .beat-card { opacity: 1; transform: none; border-color: var(--line-hi); box-shadow: 0 8px 40px rgba(0,0,0,0.5); }
+      .beat-card .k { font-family: var(--font-display); font-size: 0.66rem; letter-spacing: 0.24em; text-transform: uppercase; color: var(--amber); margin-bottom: 6px; }
+      .beat-card h1, .beat-card h2 { font-family: var(--font-display); margin: 0 0 8px; }
+      .beat-card h1 { font-size: clamp(1.8rem, 5vw, 2.6rem); color: var(--phos); line-height: 1.05; }
+      .beat-card h2 { font-size: 1rem; color: var(--muted); letter-spacing: 0.08em; text-transform: uppercase; }
+      .beat-card p { margin: 8px 0; font-size: 0.92rem; }
+      .beat-card .muted { color: var(--muted); }
+      .beat-card .big { font-family: var(--font-num); font-size: 4rem; line-height: 1; color: var(--phos); }
+      a.button { display: inline-block; background: var(--phos); color: #06130b; border: 1px solid var(--phos); border-radius: 4px;
+        padding: 11px 18px; font-family: var(--font-display); font-weight: 800; font-size: 0.78rem; letter-spacing: 0.1em;
+        text-transform: uppercase; text-decoration: none; margin: 4px 8px 0 0; }
+      a.button.ghost { background: transparent; color: var(--amber); border-color: #6a5200; }
+      .clock { height: 6px; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; margin: 10px 0 4px; background: rgba(70,255,143,0.06); }
+      .clock i { display: block; height: 100%; width: 0%; background: linear-gradient(90deg, var(--phos-dim), var(--phos)); transition: width 0.6s ease; }
+      .stage-bots { display: flex; gap: 12px; margin-top: 10px; }
+      .sb { display: flex; flex-direction: column; align-items: center; gap: 4px; transition: opacity 0.4s; }
+      .sb .sn { font-family: var(--font-num); color: var(--muted); }
+      .sb.out { opacity: 0.3; filter: grayscale(1); }
+      .sb.win .sn { color: var(--phos); }
+      .stamp { display: inline-block; margin-top: 12px; font-family: var(--font-display); font-weight: 800; letter-spacing: 0.08em;
+        color: var(--amber); border: 2px solid var(--amber); border-radius: 4px; padding: 4px 14px; transform: rotate(-6deg);
+        opacity: 0; transition: opacity 0.4s; }
+      .stamp.on { opacity: 1; }
+      .feed, .depth { list-style: none; padding: 0; margin: 8px 0 0; font-size: 0.88rem; }
+      .feed li { padding: 2px 0; border-bottom: 1px dotted rgba(31,58,40,0.5); }
+      .depth li { display: flex; align-items: baseline; gap: 10px; padding: 3px 0; }
+      .depth .t { flex: 0 0 46%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .depth .bar { flex: 1; height: 10px; background: rgba(70, 255, 143, 0.08); border: 1px solid var(--line); border-radius: 2px; overflow: hidden; }
+      .depth .bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--phos-dim), var(--phos)); }
+      .depth .n { flex: 0 0 auto; color: var(--muted); font-size: 0.8rem; }
+      .botw { width: 24px; height: 26px; flex: 0 0 auto; }
+      .bot { display: block; width: 4px; height: 4px; --c: var(--phos); filter: hue-rotate(var(--h, 0deg));
+        box-shadow: 8px 0 var(--c), 0 4px var(--c), 4px 4px var(--c), 8px 4px var(--c), 12px 4px var(--c), 16px 4px var(--c),
+          0 8px var(--c), 8px 8px var(--c), 16px 8px var(--c),
+          0 12px var(--c), 4px 12px var(--c), 8px 12px var(--c), 12px 12px var(--c), 16px 12px var(--c),
+          4px 16px var(--c), 8px 16px var(--c), 12px 16px var(--c), 4px 20px var(--c), 12px 20px var(--c); }
+      .qrbox { background: #fff; border-radius: 8px; padding: 8px; line-height: 0; display: inline-block; margin-top: 8px; }
+      .qrbox svg { width: 120px; height: auto; }
+      @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+      @media (prefers-reduced-motion: reduce) {
+        .beat-card { opacity: 1; transform: none; transition: none; }
+        .hud-hint { animation: none; } .clock i { transition: none; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="fixed-bg" aria-hidden="true">
+      <svg id="tour-svg" viewBox="0 0 1000 1000" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Stylized thrift-rack scene the camera tours">
+        <g id="pov-scale"><g id="pov-pan">
+          <rect x="-600" y="-600" width="2200" height="2200" fill="#070a08" />
+          <rect x="-600" y="120" width="2200" height="26" fill="#0d130e" stroke="#1f3a28" />
+          <rect x="-600" y="560" width="2200" height="26" fill="#0d130e" stroke="#1f3a28" />
+          <rect x="80" y="300" width="120" height="260" rx="8" fill="#12241a" stroke="#2f5a3c" />
+          <rect x="230" y="270" width="150" height="290" rx="8" fill="#2a230f" stroke="#ffb000" stroke-width="3" />
+          <rect x="250" y="300" width="110" height="70" rx="4" fill="#f0e2a8" />
+          <text x="305" y="342" text-anchor="middle" font-family="monospace" font-size="34" fill="#1c1a14">$6</text>
+          <rect x="250" y="390" width="110" height="130" rx="4" fill="#e8c33a" />
+          <text x="305" y="460" text-anchor="middle" font-family="monospace" font-size="26" fill="#1c1a14">PKMN</text>
+          <rect x="420" y="310" width="120" height="250" rx="8" fill="#12241a" stroke="#2f5a3c" />
+          <rect x="580" y="290" width="130" height="270" rx="8" fill="#12241a" stroke="#2f5a3c" />
+          <rect x="750" y="320" width="110" height="240" rx="8" fill="#12241a" stroke="#2f5a3c" />
+          <rect x="230" y="640" width="630" height="120" rx="8" fill="none" stroke="#1e7a46" stroke-dasharray="10 8" />
+          <text x="545" y="712" text-anchor="middle" font-family="monospace" font-size="36" fill="#46ff8f">SOLD $38 · nets $34.20</text>
+          <g class="motion-paths" fill="none" stroke="#46ff8f" stroke-opacity="0.35" stroke-dasharray="8 10" stroke-width="3">
+            <path d="M196 434c66-49 230 44 322 18" />
+            <path d="M518 452c22-1 228 65 303 56" />
+            <path d="M821 508s-81 263-18 399" />
+            <path d="M803 907s-238-64-317-47" />
+            <path d="M486 860s-160 76-298 17" />
+          </g>
+          <path id="tour-route" d="M196 434 C262 385 426 478 518 452 C540 451 746 517 821 508 C821 508 740 771 803 907 C803 907 565 843 486 860 C486 860 326 936 188 877" fill="none" stroke="none" />
+          <circle id="tour-focal" class="focal-point" cx="196" cy="434" r="10" fill="#46ff8f" fill-opacity="0.9" />
+        </g></g>
+      </svg>
+    </div>
+    <div class="hud">
+      <div class="frame"></div>
+      <div class="hud-top"><a class="hud-pill" href="/">snapflip ▸ <span id="hero-demand">$0 standing · 0 collectors</span> · scroll ↓</a></div>
+      <div class="hud-hint">scroll to fly the rack</div>
+    </div>
+    <main class="tour-scroll">
+      <section class="tour-beat" id="t1"><div class="beat-card">
+        <div class="k">◉ Startup Speedrun · live demo</div>
+        <h1>Know it's sold before you pay.</h1>
+        <p>Collectors park a max. Resellers snap the rack. Agents bid 60s. <span class="muted">Scroll — the camera flies the route.</span></p>
+        <p><a class="button" href="/buy">I collect</a><a class="button ghost" href="${tgUrl}">I resell</a></p>
+      </div></section>
+      <section class="tour-beat" id="t2"><div class="beat-card">
+        <div class="k">01 · Snap — $6 tag</div>
+        <h2>Rack photo, 10 seconds</h2>
+        <p>One photo at the rack. No listing, no fee, no hauling duds home.</p>
+      </div></section>
+      <section class="tour-beat" id="t3"><div class="beat-card">
+        <div class="k">02 · Claude IDs + grades</div>
+        <h2>gb-pokemon-yellow-us · conf 0.97</h2>
+        <p>Grade B “light label wear” · not a repro. Repros are hard-rejected.</p>
+        <div class="big" id="stage-price">$6</div>
+        <div class="clock"><i id="clock-fill"></i></div>
+      </div></section>
+      <section class="tour-beat" id="t4"><div class="beat-card">
+        <div class="k">03 · 60s clock auction</div>
+        <h2>Agents drop with reasons</h2>
+        <p class="muted">#3 out — cap $18 · #1 out — grade-B cap $25 · #4 out — max $30 · #2 out — label wear.</p>
+        <div class="stage-bots">
+          <div class="sb" id="sb1"><span class="botw"><i class="bot" style="--h: 0deg"></i></span><span class="sn">#1</span></div>
+          <div class="sb" id="sb2"><span class="botw"><i class="bot" style="--h: 47deg"></i></span><span class="sn">#2</span></div>
+          <div class="sb" id="sb3"><span class="botw"><i class="bot" style="--h: 94deg"></i></span><span class="sn">#3</span></div>
+          <div class="sb" id="sb4"><span class="botw"><i class="bot" style="--h: 141deg"></i></span><span class="sn">#4</span></div>
+          <div class="sb" id="sb5"><span class="botw"><i class="bot" style="--h: 188deg"></i></span><span class="sn">#5</span></div>
+        </div>
+      </div></section>
+      <section class="tour-beat" id="t5"><div class="beat-card">
+        <div class="k">04 · Sold $38</div>
+        <h2>Seller nets $34.20 after 10%</h2>
+        <p>Buyer pays clearing, never max. Card captured only on seller confirm. <span class="muted">eBay would net ~$32.87 at typical 13.5%.</span></p>
+        <p class="muted" id="revenue-line" style="font-size:0.8rem">Protocol revenue so far: $0 — every sale adds 10%.</p>
+        <span class="stamp" id="stamp">SOLD $38</span>
+      </div></section>
+      <section class="tour-beat" id="t6"><div class="beat-card">
+        <div class="k">Live order book · real</div>
+        <h2><span id="demand">$0</span> standing · <span id="collectors">0</span> collectors · <span id="tx">0</span> sales</h2>
+        <ul class="feed" id="tape"><li>…</li></ul>
+        <ul class="depth" id="skus"></ul>
+        <div id="ob-cols"></div><div id="ob-empty" hidden></div>
+        <div class="qrbox">${raw(qr)}</div>
+        <p><a class="button" href="/buy">Be collector #1</a><a class="button ghost" href="/">Classic page</a></p>
+        <div style="display:none"><span id="demand-top">$0</span><span id="collectors-top">0</span><span id="tx-top">0</span><span id="catalog-chips"></span></div>
+      </div></section>
+    </main>
+    ${tourCamScript}
+    ${statsScript}
+  </body>
+</html>`);
+  }
   return c.html(
     layout(
       "SnapFlip: sold before you buy it",
       html`<style>
-        .eyebrow { font-family: var(--font-display); font-size: 0.72rem; letter-spacing: 0.28em;
-          text-transform: uppercase; color: var(--muted); margin: 0 0 6px; }
-        h1 { font-size: clamp(1.9rem, 6vw, 2.6rem); }
+        .topbar { position: sticky; top: 0; z-index: 30; margin: -36px -20px 18px; padding: 10px 20px;
+          background: rgba(7, 10, 8, 0.88); backdrop-filter: blur(8px);
+          border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+        .topbar .live-pill { display: inline-flex; align-items: center; gap: 8px; font-family: var(--font-display);
+          font-size: 0.68rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted);
+          border: 1px solid var(--line); border-radius: 999px; padding: 5px 12px; }
+        .live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--phos-dim); display: inline-block; }
+        .live-dot.hot { background: var(--phos); box-shadow: 0 0 10px rgba(70,255,143,0.9); animation: pulse 1.6s ease-in-out infinite; }
+        .topbar .spacer { flex: 1; }
+        .topnav { display: flex; gap: 12px; align-items: center; font-size: 0.72rem; }
+        .topnav a { color: var(--muted); text-decoration: none; letter-spacing: 0.12em; text-transform: uppercase; font-family: var(--font-display); }
+        .topnav a:hover { color: var(--phos); }
+        .topbar .mini-cta { padding: 8px 14px; font-size: 0.72rem; }
+        .eyebrow { display: inline-flex; align-items: center; gap: 8px; font-family: var(--font-display); font-size: 0.68rem;
+          letter-spacing: 0.28em; text-transform: uppercase; color: var(--amber); margin: 6px 0 8px;
+          border: 1px solid #6a5200; border-radius: 999px; padding: 5px 12px; background: rgba(255,176,0,0.06); }
+        h1 { font-size: clamp(2.2rem, 7vw, 3.2rem); line-height: 1.02; margin: 8px 0 10px; }
+        h1 .glow { color: var(--phos); }
+        .lede { font-size: 1.02rem; color: var(--ink); max-width: 34em; margin: 0 0 4px; }
+        .lede .muted { color: var(--muted); }
+        .proof-strip { display: flex; gap: 10px; flex-wrap: wrap; margin: 14px 0 4px; }
+        .proof { flex: 1; min-width: 150px; border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px;
+          background: rgba(70,255,143,0.04); }
+        .proof b { display: block; font-family: var(--font-num); font-size: 1.7rem; font-weight: 400; color: var(--phos); line-height: 1; }
+        .proof.amber b { color: var(--amber); }
+        .proof span { font-size: 0.78rem; color: var(--muted); }
         .cta-row { display: flex; gap: 12px; flex-wrap: wrap; margin: 18px 0 6px; }
-        .button.ghost { background: transparent; color: var(--phos); border-color: var(--phos-dim); }
-        .button.ghost:hover { background: rgba(70, 255, 143, 0.08); border-color: var(--phos);
-          box-shadow: 0 0 16px rgba(70, 255, 143, 0.25); }
+        .button { position: relative; }
+        .button.primary { background: var(--phos); color: #06130b; border-color: var(--phos); font-weight: 800; }
+        .button.primary:hover { background: #7dffab; box-shadow: 0 0 22px rgba(70,255,143,0.45); }
+        .button.ghost { background: transparent; color: var(--amber); border-color: #6a5200; }
+        .button.ghost:hover { background: rgba(255,176,0,0.1); border-color: var(--amber);
+          box-shadow: 0 0 16px rgba(255,176,0,0.25); }
+        .cta-note { font-size: 0.8rem; color: var(--muted); margin: 6px 0 0; }
+        .park-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: stretch; margin-top: 10px; }
+        .park-row input[name="sku"] { flex: 2 1 200px; width: auto; }
+        .park-row input[name="max"] { flex: 0 1 110px; width: auto; min-width: 90px; }
+        .park-row button { flex: 0 0 auto; }
+        .funnel { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 14px 0 0; }
+        .funnel .cell { border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px; }
+        .funnel .cell.sell { border-color: #6a5200; background: rgba(255,176,0,0.04); }
+        .funnel .cell.buy { border-color: var(--line-hi); background: rgba(70,255,143,0.04); }
+        .funnel .k { font-family: var(--font-display); font-size: 0.66rem; letter-spacing: 0.2em; text-transform: uppercase; margin-bottom: 4px; }
+        .funnel .buy .k { color: var(--phos); }
+        .funnel .sell .k { color: var(--amber); }
+        .funnel p { margin: 0; font-size: 0.88rem; }
         .demo-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 22px; align-items: start; }
         .stage { position: relative; border: 1px dashed var(--line); border-radius: 6px;
-          padding: 18px 14px; min-height: 15em; text-align: center; }
-        .stage .tag { padding: 2px 14px 4px 30px; margin-bottom: 12px; }
+          padding: 18px 14px 14px; min-height: 17em; text-align: center; background: rgba(0,0,0,0.25); }
+        .stage .tag { padding: 2px 14px 4px 30px; margin-bottom: 8px; }
         .tag .tagtxt { color: #1c1a14; text-shadow: none; font-family: var(--font-num); font-size: 1.25rem; }
         #stage-price { font-size: 4.6rem; }
+        .clock { height: 6px; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; margin: 8px 4px 4px; background: rgba(70,255,143,0.06); }
+        .clock i { display: block; height: 100%; width: 0%; background: linear-gradient(90deg, var(--phos-dim), var(--phos)); transition: width 0.5s ease; }
+        .clock-label { font-size: 0.72rem; color: var(--muted); letter-spacing: 0.14em; text-transform: uppercase; font-family: var(--font-display); }
         .stage-bots { display: flex; justify-content: center; gap: 14px; margin-top: 10px; }
-        .sb { display: flex; flex-direction: column; align-items: center; gap: 5px; }
+        .sb { display: flex; flex-direction: column; align-items: center; gap: 5px; transition: opacity 0.3s; }
         .sb .sn { font-family: var(--font-num); font-size: 0.95rem; color: var(--muted); line-height: 1; }
-        .sb.out { opacity: 0.35; filter: grayscale(1); }
+        .sb.out { opacity: 0.32; filter: grayscale(1); }
         .sb.win .botw { filter: drop-shadow(0 0 9px rgba(70, 255, 143, 0.9)); }
         .sb.win .sn { color: var(--phos); text-shadow: 0 0 8px rgba(70, 255, 143, 0.6); }
-        .stamp { position: absolute; top: 38%; left: 50%; transform: translate(-50%, -50%) rotate(-12deg);
+        .stamp { position: absolute; top: 36%; left: 50%; transform: translate(-50%, -50%) rotate(-12deg);
           font-family: var(--font-display); font-weight: 800; font-size: 1.6rem; letter-spacing: 0.08em;
           color: var(--amber); border: 2px solid var(--amber); border-radius: 4px; padding: 4px 14px;
-          background: rgba(7, 10, 8, 0.82); opacity: 0;
+          background: rgba(7, 10, 8, 0.88); opacity: 0; pointer-events: none;
           text-shadow: 0 0 12px rgba(255, 176, 0, 0.7); box-shadow: 0 0 16px rgba(255, 176, 0, 0.25); }
         .stamp.on { opacity: 1; animation: stampin 0.35s cubic-bezier(0.2, 1.6, 0.4, 1) both; }
         @keyframes stampin { from { transform: translate(-50%, -50%) rotate(-12deg) scale(2.2); opacity: 0; } }
-        .reel { font-family: var(--font-num); font-size: 1.05rem; line-height: 1.7; min-height: 15em;
+        .reel { font-family: var(--font-num); font-size: 1.05rem; line-height: 1.7; min-height: 17em;
           padding: 4px 0; white-space: pre-wrap; }
+        .reel-line { display: flex; gap: 8px; align-items: baseline; }
         .reel-line .reel-tag { display: inline-block; width: 6.8em; flex: none; white-space: nowrap; }
         .reel-tag.phos { color: var(--phos); }
         .reel-tag.amber { color: var(--amber); }
@@ -291,16 +685,25 @@ landing.get("/", async (c) => {
           font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.15em; cursor: pointer;
           padding: 4px 0; text-shadow: none; }
         #replay:hover { color: var(--phos); box-shadow: none; background: none; }
+        .money { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; margin-top: 12px; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+        .money .m { padding: 12px 10px; text-align: center; background: rgba(0,0,0,0.2); position: relative; }
+        .money .m + .m::before { content: "▸"; position: absolute; left: -7px; top: 38%; color: var(--phos-dim); background: var(--bg); padding: 0 2px; }
+        .money .m b { display: block; font-family: var(--font-num); font-size: 1.9rem; font-weight: 400; line-height: 1; }
+        .money .m.buy b { color: var(--phos); }
+        .money .m.sell b { color: var(--amber); }
+        .money .m span { font-size: 0.74rem; color: var(--muted); }
         .steps { display: flex; gap: 18px; flex-wrap: wrap; }
-        .step { flex: 1; min-width: 180px; }
-        .step .num { font-family: var(--font-num); font-size: 2rem; color: var(--phos); display: block; }
+        .step { flex: 1; min-width: 180px; border-left: 2px solid var(--line); padding-left: 12px; }
+        .step:first-child { border-color: var(--phos-dim); }
+        .step .num { font-family: var(--font-num); font-size: 2rem; color: var(--phos); display: block; line-height: 1; }
         .step strong { font-family: var(--font-display); font-size: 0.8rem; letter-spacing: 0.12em;
-          text-transform: uppercase; display: block; margin-bottom: 2px; }
+          text-transform: uppercase; display: block; margin: 4px 0 2px; }
         .ob-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; margin-top: 14px; }
         .obsub { font-family: var(--font-display); font-size: 0.68rem; font-weight: 600;
           letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
         .rails { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
-        .rails .r strong { display: block; font-family: var(--font-display); font-size: 0.78rem;
+        .rails .r { border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; }
+        .rails .r strong { display: block; font-family: var(--font-display); font-size: 0.76rem;
           letter-spacing: 0.1em; text-transform: uppercase; color: var(--phos); margin-bottom: 2px; }
         .rails .r span { color: var(--muted); font-size: 0.85rem; }
         .vs { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; }
@@ -310,10 +713,13 @@ landing.get("/", async (c) => {
         .vs .old li::before { content: "✕ "; color: var(--red); }
         .vs .new li { color: var(--phos); }
         .vs .new li::before { content: "▸ "; color: var(--phos-dim); }
+        .faq details { border-top: 1px solid var(--line); padding: 10px 2px; }
+        .faq details:last-child { border-bottom: 1px solid var(--line); }
+        .faq summary { cursor: pointer; font-family: var(--font-display); font-size: 0.8rem; letter-spacing: 0.06em; color: var(--ink); }
+        .faq p { color: var(--muted); font-size: 0.88rem; margin: 6px 0 2px; }
         .foot { margin-top: 28px; font-size: 0.8rem; }
         .foot .blabel { font-family: var(--font-display); font-size: 0.62rem; font-weight: 600;
           letter-spacing: 0.2em; text-transform: uppercase; color: var(--phos-dim); margin-right: 8px; }
-        /* Thrift price tag around the demand figure. */
         .tag { display: inline-block; background: #f0e2a8; border-radius: 4px; padding: 2px 18px 6px 34px;
           transform: rotate(-2deg); position: relative; box-shadow: 2px 3px 0 rgba(0, 0, 0, 0.4); }
         .tag::before { content: ""; position: absolute; left: 11px; top: 50%; margin-top: -6px;
@@ -325,23 +731,73 @@ landing.get("/", async (c) => {
           animation: pulse 0.9s ease-in-out infinite; }
         body.turbo .reel { text-shadow: 0 0 12px rgba(70, 255, 143, 0.55); }
         @media (max-width: 719px) {
-          .demo-cols, .ob-cols, .rails, .vs { grid-template-columns: minmax(0, 1fr); }
+          .demo-cols, .ob-cols, .rails, .vs, .funnel { grid-template-columns: minmax(0, 1fr); }
+          .money { grid-template-columns: 1fr 1fr; }
+          .money .m:nth-child(3)::before { content: none; }
+          .topbar { margin: -36px -20px 12px; }
+          .topnav { display: none; }
+          .qrbox { display: none; }
         }
-        @media (prefers-reduced-motion: reduce) { .turbo-badge, .stamp.on { animation: none; } }
+        @media (prefers-reduced-motion: reduce) { .turbo-badge, .stamp.on { animation: none; } .clock i { transition: none; } }
       </style>
-      <p class="eyebrow">SnapFlip — agentic resale · live order book</p>
-      <h1>Sold before you buy it.</h1>
-      <p class="muted">Buyer agents bid on thrift finds while they're still on the rack.</p>
-      <div class="cta-row">
-        <a class="button" href="/buy">I collect — set a standing order</a>
-        ${tg ? html`<a class="button ghost" href="https://t.me/${tg}">I resell — snap on Telegram</a>` : ""}
+      <div class="topbar">
+        <span class="live-pill"><i class="live-dot" id="live-dot"></i> <span id="hero-demand">order book opens live — be #1</span></span>
+        <nav class="topnav"><a href="#demo">tape</a><a href="#book">book</a><a href="#trust">trust</a><a href="#faq">faq</a></nav>
+        <span class="spacer"></span>
+        <a class="button mini-cta" href="/sell" style="background:transparent">I resell</a>
+        <a class="button mini-cta" href="/?tour=1" style="background:transparent">✈ tour</a>
+        <a class="button mini-cta" href="/buy">Set order</a>
       </div>
-      <div class="card">
-        <h2>How a snap becomes a sale <span class="badge" style="float: right">simulated tape</span></h2>
+      <p class="eyebrow">◉ Startup Speedrun · live demo · real money</p>
+      <h1>Tell an agent what you're hunting. <span class="glow">It wins it for you.</span></h1>
+      <p class="lede">Set your max once — your agent bids every matching thrift find on a 60-second clock and never goes a dollar over. <span class="muted">Resellers snap the rack on Telegram; Claude IDs and grades it; the seller only buys the item once your agent has already won it.</span></p>
+      <div class="proof-strip">
+        <div class="proof amber"><b>$6 → $38</b><span>simulated example · seller nets $34.20</span></div>
+        <div class="proof"><b>60s</b><span>ascending clock · reserve + $2 ticks · no sniping</span></div>
+        <div class="proof"><b>10%</b><span>fee only when it sells · vs typically 13–15% eBay</span></div>
+      </div>
+      <div class="cta-row">
+        <a class="button primary" href="/buy">I collect — set a standing order</a>
+        <a class="button ghost" href="/sell">I resell — see how it pays</a>
+      </div>
+      <p class="cta-note">Takes ~40 seconds. Your max is law — code enforces it, the model can only bid lower.</p>
+      <div class="card" id="park">
+        <h2>Park an order in 5 seconds</h2>
+        <form method="get" action="/buy" class="park-row">
+          <input name="sku" list="sku-list" maxlength="120" placeholder="What are you hunting? e.g. Pokemon Yellow Version" autocomplete="off" aria-label="Item you want" />
+          <datalist id="sku-list"></datalist>
+          <input name="max" type="number" min="1" max="1000" step="1" placeholder="Max $" aria-label="Max price in USD" />
+          <button type="submit">Park it →</button>
+        </form>
+        <p class="muted" style="font-size:0.8rem;margin:8px 0 0">Your agent bids the moment one is snapped — charged only if it wins, never above your max.</p>
+      </div>
+      <script>
+        (function () {
+          var dl = document.getElementById("sku-list");
+          if (!dl || dl.dataset.filled) return;
+          fetch("/api/stats").then(function (r) { return r.json(); }).then(function (ob) {
+            if (!ob.catalog) return;
+            dl.dataset.filled = "1";
+            ob.catalog.slice(0, 12).forEach(function (s) {
+              var o = document.createElement("option");
+              o.value = s.title;
+              dl.appendChild(o);
+            });
+          }).catch(function () { /* free-text still works */ });
+        })();
+      </script>
+      <div class="funnel">
+        <div class="cell buy"><div class="k">For collectors</div><p>“Pokémon Yellow, authentic, good label, up to $45.” Your agent bids while you sleep — charged only when the seller confirms.</p></div>
+        <div class="cell sell"><div class="k">For resellers</div><p>One photo at the rack. Watch bids climb live. Buy the cart only if it clears your reserve. Walk away free if it doesn't.</p></div>
+      </div>
+      <div class="card" id="demo">
+        <h2>How a snap becomes a sale <span class="badge" style="float: right">simulated tape · 15s</span></h2>
         <div class="demo-cols">
           <div class="stage">
             <div class="tag"><span class="tagtxt">$6 tag</span></div>
-            <div class="big" id="stage-price">—</div>
+            <div class="big" id="stage-price">$6</div>
+            <div class="clock"><i id="clock-fill"></i></div>
+            <div class="clock-label">60s clock · +$2 / tick</div>
             <div class="stage-bots">
               <div class="sb" id="sb1"><span class="botw"><i class="bot" style="--h: 0deg"></i></span><span class="sn">#1</span></div>
               <div class="sb" id="sb2"><span class="botw"><i class="bot" style="--h: 47deg"></i></span><span class="sn">#2</span></div>
@@ -352,46 +808,62 @@ landing.get("/", async (c) => {
             <div class="stamp" id="stamp">SOLD $38</div>
           </div>
           <div>
-            <div class="reel" id="reel"></div>
+            <div class="reel" id="reel" aria-live="polite"></div>
             <button id="replay" type="button" hidden>▸ replay</button>
           </div>
         </div>
+        <p class="muted" style="font-size:0.78rem;margin:8px 0 0">Scripted example — every dropout says why: grade cap, label wear, max reached. Real auctions stream the same feed to the seller on Telegram.</p>
+      </div>
+      <div class="card">
+        <h2>Where the money goes</h2>
+        <div class="money">
+          <div class="m sell"><b>$6</b><span>rack tag<br />you haven't paid yet</span></div>
+          <div class="m buy"><b>$38</b><span>clearing price<br />agent #5 wins</span></div>
+          <div class="m sell"><b>$34.20</b><span>seller nets<br />after 10% fee</span></div>
+          <div class="m buy"><b>$0 risk</b><span>no sale → walk away<br />nothing lost</span></div>
+        </div>
+        <p class="muted" style="font-size:0.82rem;margin:10px 0 0">Buyer card is authorized at the win, captured only when the seller buys the item and confirms with a photo. Seller payout releases on delivery via Stripe Connect. On a $38 sale: eBay nets ~$32.87 at a typical 13.5%* — SnapFlip nets $34.20.<br />*eBay all-in fees typically run 13–15% depending on category.</p>
+        <p class="muted" style="font-size:0.82rem;margin:6px 0 0" id="revenue-line">Protocol revenue so far: $0 — every sale adds 10%.</p>
       </div>
       <div class="card">
         <h2>How it works</h2>
         <div class="steps">
-          <div class="step"><span class="num">01</span><strong>Set</strong>
-            <span class="muted">Tell your agent the cart and your max. It never goes over.</span></div>
-          <div class="step"><span class="num">02</span><strong>Snap</strong>
-            <span class="muted">A reseller snaps it on Telegram. Claude IDs and grades it.</span></div>
-          <div class="step"><span class="num">03</span><strong>Sold</strong>
-            <span class="muted">Agents bid on a 60s clock. The seller sees the price before paying.</span></div>
+          <div class="step"><span class="num">01</span><strong>Set — 40s</strong>
+            <span class="muted">Tell your agent the exact cart + max. Grade caps optional (“won't buy below B”). Never goes over.</span></div>
+          <div class="step"><span class="num">02</span><strong>Snap — 10s</strong>
+            <span class="muted">Reseller snaps it on Telegram at the rack. Claude IDs the SKU, grades condition, rejects repros.</span></div>
+          <div class="step"><span class="num">03</span><strong>Sold — 60s</strong>
+            <span class="muted">Matching agents bid on a live clock. Seller sees the price before paying. Buyer pays clearing, not max.</span></div>
         </div>
       </div>
-      <div class="card">
+      <div class="card" id="book">
         <h2>Live order book <span class="badge live" style="float: right">REAL</span></h2>
-        <div class="row">
+        <div class="row" id="ob-stats" hidden>
           <div><div class="tag"><div class="big" id="demand">$0</div></div><div class="muted">standing demand</div></div>
           <div><div class="big" id="collectors">0</div><div class="muted">collectors</div></div>
-          <div><div class="big" id="tx">0</div><div class="muted">real transactions</div></div>
+          <div><div class="big" id="tx">0</div><div class="muted">sales</div></div>
         </div>
+        <div class="chips" id="catalog-chips" style="margin-top:12px"></div>
         <div class="ob-cols" id="ob-cols">
           <div><div class="obsub">Recent sales</div><ul class="feed" id="tape"><li>…</li></ul></div>
           <div><div class="obsub">Standing demand</div><ul class="depth" id="skus"></ul></div>
         </div>
-        <p class="muted" id="ob-empty" hidden>The order book opens at the event — be collector #1.</p>
+        <div id="ob-empty" hidden>
+          <p class="muted" style="margin:12px 0 8px">The book opens live at the event — early collectors set the price. Be the first order and every reseller hunts for you.</p>
+          <p style="margin:0"><a class="button primary" href="/buy">Be collector #1 →</a></p>
+        </div>
       </div>
-      <div class="card">
-        <h2>Agents with a limit, not a blank check</h2>
+      <div class="card" id="trust">
+        <h2>Autonomy with guardrails</h2>
         <div class="rails">
-          <div class="r"><strong>Your max is law</strong>
-            <span>Code enforces it. The model can only bid lower, never higher.</span></div>
-          <div class="r"><strong>Charged on confirm</strong>
-            <span>Your card is authorized at the win and captured only when the seller buys the item.</span></div>
-          <div class="r"><strong>Paid on delivery</strong>
-            <span>The seller's payout is released after the item arrives.</span></div>
-          <div class="r"><strong>Every exit explained</strong>
-            <span>Agents say why they drop: grade cap, label wear, max reached.</span></div>
+          <div class="r"><strong>▣ Your max is law</strong>
+            <span>Enforced in code, not in the prompt. The model can only bid lower, never higher.</span></div>
+          <div class="r"><strong>◉ Charged on confirm</strong>
+            <span>Authorized at the win, captured only when the seller buys the item + sends proof.</span></div>
+          <div class="r"><strong>⌗ Paid on delivery</strong>
+            <span>Seller payout releases after the item arrives. No ghost shipments.</span></div>
+          <div class="r"><strong>✦ Every exit explained</strong>
+            <span>Agents say why they drop: grade cap, label wear, max reached. Auditable, not vibes.</span></div>
         </div>
       </div>
       <div class="card">
@@ -400,9 +872,9 @@ landing.get("/", async (c) => {
           <div>
             <div class="obsub">The old way</div>
             <ul class="old">
-              <li>Buy the cart first</li>
-              <li>Photograph, list, wait</li>
-              <li>~13.6% eBay fee</li>
+              <li>Buy the cart first, hope later</li>
+              <li>Photograph, list, wait weeks</li>
+              <li>13–15% eBay fees on hope</li>
             </ul>
           </div>
           <div>
@@ -415,20 +887,88 @@ landing.get("/", async (c) => {
           </div>
         </div>
       </div>
+      <div class="card faq" id="faq">
+        <h2>Fair questions</h2>
+        <details open><summary>What if nobody bids?</summary><p>You walk away. No listing, no fee, no dead inventory. The snap cost you 10 seconds.</p></details>
+        <details><summary>When is my card actually charged?</summary><p>Only after the seller buys the item and confirms with a photo. Before that it's just an authorization hold at the clearing price — never your max.</p></details>
+        <details><summary>What stops fakes?</summary><p>Claude checks every snap for repro tells and the auction engine hard-rejects flagged items. Grade caps let buyers auto-skip rough copies.</p></details>
+        <details><summary>Do I need Telegram / Claude?</summary><p>Resellers live on Telegram. Collectors can use the web, Claude (MCP connector), or the Brainbase concierge — same order book.</p></details>
+        <details><summary>Is there a subscription?</summary><p>Collecting is free. Buyer Plus ($6/mo) wins the tie-breaks when two maxes collide. Sellers never pay to list — 10% only when it sells.</p></details>
+        <details><summary>How fast do sellers get paid?</summary><p>Standard payout lands on delivery, free. Trusted sellers can cash out at confirm time with express (−1% rush).</p></details>
+      </div>
       <div class="card">
         <div class="row" style="align-items: flex-start">
           <div class="qrbox">${raw(qr)}</div>
           <div style="flex: 1; min-width: 240px">
-            <h2 style="margin: 0 0 4px">Scan to set a standing order</h2>
-            <p class="muted" style="margin: 4px 0 14px">${buyUrl}</p>
-            <a class="button" href="/buy">I collect — set a standing order</a>
+            <h2 style="margin: 0 0 4px">Two doors, one book</h2>
+            <p class="muted" style="margin: 4px 0 14px">Collectors: ${buyUrl}<br />Resellers: Telegram → live auction in 60s</p>
+            <div class="cta-row" style="margin-top:0">
+              <a class="button primary" href="/buy">I collect — set a standing order</a>
+              <a class="button ghost" href="/sell">I resell — how it works</a>
+            </div>
           </div>
         </div>
       </div>
+      <div style="display:none"><span id="demand-top">$0</span><span id="collectors-top">0</span><span id="tx-top">0</span></div>
       ${soonRail}
-      <p class="foot muted"><span class="blabel">Built with</span>Anthropic Claude · Cloudflare Workers, D1, R2, Durable Objects · Stripe Connect · Brainbase<br />Built at the startup speedrun.</p>
+      <p class="foot muted"><span class="blabel">Built with</span>Anthropic Claude · Cloudflare Workers, D1, R2, Durable Objects · Stripe Connect · Brainbase<br />Built at Startup Speedrun.</p>
       ${tapeScript}
       ${statsScript}`,
+      { image: `${c.env.PUBLIC_URL}/og.png` },
+    ),
+  );
+});
+
+// Reseller onboarding: what happens after the snap, before the Telegram bounce.
+landing.get("/sell", (c) => {
+  const tg = c.env.TELEGRAM_BOT_USERNAME;
+  const tgUrl = tg ? `https://t.me/${tg}` : "/buy";
+  return c.html(
+    layout(
+      "SnapFlip for resellers: sold before you buy it",
+      html`<style>
+        .eyebrow { display: inline-flex; align-items: center; gap: 8px; font-family: var(--font-display); font-size: 0.68rem;
+          letter-spacing: 0.28em; text-transform: uppercase; color: var(--amber); margin: 6px 0 8px;
+          border: 1px solid #6a5200; border-radius: 999px; padding: 5px 12px; background: rgba(255,176,0,0.06); }
+        h1 { font-size: clamp(2rem, 6vw, 2.8rem); line-height: 1.05; }
+        h1 .glow { color: var(--amber); }
+        .button.ghost { background: transparent; color: var(--amber); border-color: #6a5200; }
+        .button.ghost:hover { background: rgba(255,176,0,0.1); border-color: var(--amber); }
+        .steps { display: flex; gap: 18px; flex-wrap: wrap; }
+        .step { flex: 1; min-width: 180px; border-left: 2px solid #6a5200; padding-left: 12px; }
+        .step .num { font-family: var(--font-num); font-size: 2rem; color: var(--amber); display: block; line-height: 1; }
+        .step strong { font-family: var(--font-display); font-size: 0.8rem; letter-spacing: 0.12em;
+          text-transform: uppercase; display: block; margin: 4px 0 2px; }
+      </style>
+      <p class="eyebrow">◉ For resellers · 60 seconds · $0 risk</p>
+      <h1>Know it's <span class="glow">sold</span> before you pay.</h1>
+      <p class="muted">One photo at the rack. Agents bid while you watch. Buy the item only if it clears your reserve — walk away free if it doesn't.</p>
+      <div class="card">
+        <h2>At the rack</h2>
+        <div class="steps">
+          <div class="step"><span class="num">01</span><strong>Snap — 10s</strong>
+            <span class="muted">Send one photo to the bot. Claude IDs the exact item and grades it on the spot.</span></div>
+          <div class="step"><span class="num">02</span><strong>Watch — 60s</strong>
+            <span class="muted">Collector agents bid on a live clock, right in the chat. You see every tick.</span></div>
+          <div class="step"><span class="num">03</span><strong>Decide</strong>
+            <span class="muted">Cleared? Grab it, tap “I bought it”, ship it. Not cleared? Leave it — no fee, no listing, nothing lost.</span></div>
+        </div>
+      </div>
+      <div class="card">
+        <h2>The money</h2>
+        <p style="margin:0">10% fee, <strong>only when it sells</strong>. A $38 clearing puts <strong>$34.20</strong> in your pocket (eBay would net ~$32.87 at typical 13.5%). Payout lands on delivery via Stripe — trusted sellers can express-cash-out at confirm for a 1% rush.</p>
+      </div>
+      <div class="card">
+        <h2>What you need</h2>
+        <ul class="muted" style="margin:0">
+          <li>Telegram — the whole auction happens in chat.</li>
+          <li>One Stripe onboarding (2 min) before your first payout.</li>
+          <li>That's it. No listings, no photoshoots, no fee to try.</li>
+        </ul>
+        <p style="margin:14px 0 0"><a class="button ghost" href="${tgUrl}">▸ Open the bot and snap it</a></p>
+      </div>
+      <p class="muted"><a href="/">← Back to the full pitch</a></p>`,
+      { image: `${c.env.PUBLIC_URL}/og.png` },
     ),
   );
 });
@@ -444,6 +984,10 @@ landing.get("/qr", async (c) => {
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#070a08" />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%23070a08'/%3E%3Ctext x='2' y='12.5' font-family='monospace' font-size='11' font-weight='bold' fill='%2346ff8f'%3ES%3E%3C/text%3E%3C/svg%3E" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="SnapFlip booth" />
+    <meta property="og:image" content="${c.env.PUBLIC_URL}/og.png" />
+    <meta name="twitter:card" content="summary_large_image" />
     <title>SnapFlip booth</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />

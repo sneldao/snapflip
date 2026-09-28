@@ -1,9 +1,12 @@
 // Owner: C. Payment limits, authorize/capture, Connect payouts.
 // Stub mode: with no STRIPE_SECRET_KEY, every call succeeds with fake ids so A/B/D can test the full loop.
 import { Hono } from "hono";
+import { html } from "hono/html";
 import Stripe from "stripe";
 import { notify } from "./telegram";
 import { requireApiKey, type App } from "./lib/util";
+import { expressFeeBps, PLUS_MONTHLY_CENTS, sellerFeeBps, splitExpress, splitFee } from "./lib/fees";
+import { layout } from "./web/layout";
 import type { Env, RankedBid, SettleResult } from "./types";
 
 export function stripe(env: Env): Stripe {
@@ -11,6 +14,35 @@ export function stripe(env: Env): Stripe {
 }
 
 const stubMode = (env: Env) => !env.STRIPE_SECRET_KEY;
+
+/** DDL mirror of schema.sql — ensures the table on DBs created before it existed. */
+const SUBSCRIPTIONS_DDL = `CREATE TABLE IF NOT EXISTS subscriptions (
+  buyer_id TEXT PRIMARY KEY REFERENCES buyers(id),
+  stripe_subscription_id TEXT,
+  status TEXT NOT NULL DEFAULT 'active',
+  current_period_end TEXT,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+)`;
+
+/** Buyer Plus entitlement. False on any error — a missing table must never break matching. */
+export async function isPlus(env: Env, buyerId: string): Promise<boolean> {
+  try {
+    const row = await env.DB.prepare(
+      `SELECT 1 AS ok FROM subscriptions WHERE buyer_id = ? AND status IN ('active', 'trialing')
+        AND (current_period_end IS NULL OR current_period_end > strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`,
+    ).bind(buyerId).first<{ ok: number }>();
+    return !!row;
+  } catch {
+    return false;
+  }
+}
+
+/** Trusted sellers (flawless reliability + connected Stripe account) may skip the delivery hold. */
+export async function expressEligible(env: Env, sellerId: string): Promise<boolean> {
+  const s = await env.DB.prepare("SELECT stripe_account_id, reliability FROM sellers WHERE id = ?")
+    .bind(sellerId).first<{ stripe_account_id: string | null; reliability: number }>();
+  return !!s?.stripe_account_id && s.reliability >= 1.0;
+}
 
 /** Seller gets 2h to confirm purchase before the card hold is released. */
 const AUTH_HOLD_MS = 2 * 60 * 60 * 1000;
@@ -83,11 +115,56 @@ export async function capture(env: Env, auctionId: string): Promise<void> {
   }
 }
 
+/**
+ * Express payout: trusted sellers cash out at confirm time instead of waiting for delivery,
+ * for a rush fee on top of the standard take. Express failure never breaks the sale — the
+ * auction stays 'captured' and the standard on-delivery payout still applies.
+ */
+export async function releaseExpress(env: Env, auctionId: string): Promise<{ payoutCents: number; expressFeeCents: number }> {
+  const a = await loadAuction(env, auctionId);
+  if (!a || a.status !== "captured" || a.clearing_cents == null) throw new Error("auction not releasable");
+  if (!(await expressEligible(env, a.seller_id))) throw new Error("express unlocks after reliable deliveries");
+  const { netCents } = splitFee(a.clearing_cents, sellerFeeBps(env));
+  const { expressFeeCents, payoutCents } = splitExpress(netCents, expressFeeBps(env));
+  let transferId = `tr_stub_${auctionId}`;
+  if (!stubMode(env)) {
+    if (!a.stripe_account_id) throw new Error("seller has no Connect account");
+    const s = stripe(env);
+    let sourceTransaction: string | undefined;
+    if (a.payment_intent_id) {
+      const pi = await s.paymentIntents.retrieve(a.payment_intent_id);
+      sourceTransaction = typeof pi.latest_charge === "string" ? pi.latest_charge : (pi.latest_charge?.id ?? undefined);
+    }
+    const t = await s.transfers.create(
+      {
+        amount: payoutCents,
+        currency: "usd",
+        destination: a.stripe_account_id,
+        transfer_group: `auction_${auctionId}`,
+        ...(sourceTransaction ? { source_transaction: sourceTransaction } : {}),
+      },
+      { idempotencyKey: `release_express_${auctionId}` },
+    );
+    transferId = t.id;
+  }
+  await env.DB.prepare("UPDATE auctions SET status = 'released', transfer_id = ? WHERE id = ?").bind(transferId, auctionId).run();
+  // Best-effort: pre-ledger databases have no platform_fees table yet.
+  await env.DB.prepare("UPDATE platform_fees SET express_fee_cents = ? WHERE auction_id = ?").bind(expressFeeCents, auctionId).run().catch(() => {});
+  await notify(env, { sellerId: a.seller_id }, { type: "released", auctionId, amountCents: payoutCents });
+  return { payoutCents, expressFeeCents };
+}
+
 /** HANDOFF A → C. Delivered: transfer clearing price minus fee to the seller's Connect account. */
 export async function release(env: Env, auctionId: string): Promise<void> {
   const a = await loadAuction(env, auctionId);
   if (!a || a.status !== "captured" || a.clearing_cents == null) throw new Error("auction not releasable");
-  const amount = a.clearing_cents - Math.round((a.clearing_cents * Number(env.SELLER_FEE_BPS || "1000")) / 10_000);
+  // Prefer the fee snapshot written at settle time; fall back to the live rate for
+  // auctions that settled before the ledger existed.
+  const snap = await env.DB.prepare("SELECT fee_cents FROM platform_fees WHERE auction_id = ?")
+    .bind(auctionId).first<{ fee_cents: number }>().catch(() => null);
+  const amount = snap
+    ? a.clearing_cents - snap.fee_cents
+    : splitFee(a.clearing_cents, sellerFeeBps(env)).netCents;
   let transferId = `tr_stub_${auctionId}`;
   if (!stubMode(env)) {
     if (!a.stripe_account_id) throw new Error("seller has no Connect account");
@@ -157,6 +234,109 @@ export async function voidExpiredAuths(env: Env): Promise<void> {
 
 export const payments = new Hono<App>();
 
+/** Reuse the buyer's Stripe customer across card setup and Plus checkout. */
+async function ensureCustomer(env: Env, buyer: { id: string; name: string; email: string | null; stripe_customer_id: string | null }): Promise<string> {
+  if (buyer.stripe_customer_id) return buyer.stripe_customer_id;
+  const customer = (await stripe(env).customers.create({ name: buyer.name, email: buyer.email ?? undefined, metadata: { buyerId: buyer.id } })).id;
+  await env.DB.prepare("UPDATE buyers SET stripe_customer_id = ? WHERE id = ?").bind(customer, buyer.id).run();
+  return customer;
+}
+
+/** Buyer Plus perks page. No side effects — checkout is a separate step. */
+payments.get("/buy/plus", async (c) => {
+  const buyerId = c.req.query("buyer") ?? "";
+  const buyer = buyerId
+    ? await c.env.DB.prepare("SELECT id FROM buyers WHERE id = ?").bind(buyerId).first<{ id: string }>()
+    : null;
+  if (!buyer) return c.text("unknown buyer", 404);
+  const plus = await isPlus(c.env, buyerId);
+  return c.html(
+    layout(
+      "SnapFlip Plus",
+      html`<p class="muted" style="font-family: var(--font-display); font-size: 0.72rem; letter-spacing: 0.22em; text-transform: uppercase">Buyer Plus &middot; $6/mo &middot; cancel anytime</p>
+        <h1>Win the ties.</h1>
+        ${plus
+          ? html`<div class="card"><h2>✦ Plus active</h2><p class="muted" style="margin:0">Your agents jump the tie-breaks. <a href="/buy/orders">Back to your orders &rarr;</a></p></div>`
+          : html`<div class="card">
+              <h2>What Plus gets you</h2>
+              <ul>
+                <li><strong>Tie-break priority.</strong> Equal max? Your agent wins and takes the better number.</li>
+                <li><strong>Plus badge</strong> on your orders — sellers see real demand.</li>
+                <li><strong>Funds the book.</strong> Keeps collector seats free for everyone else.</li>
+              </ul>
+              <p><a class="button" href="/buy/plus/checkout?buyer=${buyerId}">Go Plus — $6/mo</a></p>
+              <p class="muted">One subscription per buyer. Cancel anytime from your receipt page.</p>
+            </div>`}`,
+      { image: `${c.env.PUBLIC_URL}/og.png` },
+    ),
+  );
+});
+
+/** Start Plus checkout. Stub mode activates instantly so the demo works with no keys. */
+payments.get("/buy/plus/checkout", async (c) => {
+  const buyerId = c.req.query("buyer") ?? "";
+  const buyer = buyerId
+    ? await c.env.DB.prepare("SELECT id, name, email, stripe_customer_id FROM buyers WHERE id = ?").bind(buyerId)
+        .first<{ id: string; name: string; email: string | null; stripe_customer_id: string | null }>()
+    : null;
+  if (!buyer) return c.text("unknown buyer", 404);
+  await c.env.DB.prepare(SUBSCRIPTIONS_DDL).run().catch(() => {});
+  if (await isPlus(c.env, buyerId)) return c.redirect("/buy/orders");
+  if (stubMode(c.env)) {
+    await c.env.DB.prepare(
+      "INSERT OR REPLACE INTO subscriptions (buyer_id, stripe_subscription_id, status, current_period_end) VALUES (?, ?, 'active', ?)",
+    ).bind(buyerId, `sub_stub_${buyerId}`, new Date(Date.now() + 30 * 864e5).toISOString()).run();
+    return c.redirect("/buy/orders");
+  }
+  if (!c.env.BUYER_PLUS_PRICE_ID) return c.text("Plus is not configured yet (missing price).", 500);
+  const customer = await ensureCustomer(c.env, buyer);
+  const session = await stripe(c.env).checkout.sessions.create({
+    mode: "subscription",
+    customer,
+    line_items: [{ price: c.env.BUYER_PLUS_PRICE_ID, quantity: 1 }],
+    client_reference_id: buyerId,
+    success_url: `${c.env.PUBLIC_URL}/buy/orders`,
+    cancel_url: `${c.env.PUBLIC_URL}/buy/plus?buyer=${buyerId}`,
+  });
+  return c.redirect(session.url!);
+});
+
+/** Admin/judge revenue view: ledger totals plus the most recent settled sales. */
+payments.get("/api/revenue", requireApiKey, async (c) => {
+  let rows: { auction_id: string; title: string; clearing_cents: number; fee_bps: number; fee_cents: number; status: string; ended_at: string }[] = [];
+  try {
+    const { results } = await c.env.DB.prepare(
+      `SELECT pf.auction_id, COALESCE(sk.title, 'item') AS title, pf.clearing_cents, pf.fee_bps, pf.fee_cents, a.status, a.ended_at
+         FROM platform_fees pf JOIN auctions a ON a.id = pf.auction_id
+         LEFT JOIN snaps sn ON sn.id = a.snap_id LEFT JOIN skus sk ON sk.id = sn.sku_id
+        WHERE a.payment_intent_id NOT LIKE 'pi_stub_%'
+        ORDER BY pf.created_at DESC LIMIT 50`,
+    ).all<{ auction_id: string; title: string; clearing_cents: number; fee_bps: number; fee_cents: number; status: string; ended_at: string }>();
+    rows = results;
+  } catch { /* pre-ledger database: empty ledger */ }
+  const paid = rows.filter((r) => r.status === "captured" || r.status === "released");
+  let plus = { active: 0, mrrCents: 0 };
+  let expressFeesCents = 0;
+  try {
+    const sub = await c.env.DB.prepare(
+      `SELECT COUNT(*) AS active FROM subscriptions WHERE status IN ('active', 'trialing')
+        AND (current_period_end IS NULL OR current_period_end > strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`,
+    ).first<{ active: number }>();
+    plus = { active: sub?.active ?? 0, mrrCents: (sub?.active ?? 0) * PLUS_MONTHLY_CENTS };
+    const ex = await c.env.DB.prepare("SELECT COALESCE(SUM(express_fee_cents), 0) AS total FROM platform_fees").first<{ total: number }>();
+    expressFeesCents = ex?.total ?? 0;
+  } catch { /* pre-ledger database: extras stay zero */ }
+  return c.json({
+    feeBps: sellerFeeBps(c.env),
+    sales: paid.length,
+    grossCents: paid.reduce((s, r) => s + r.clearing_cents, 0),
+    feesCents: paid.reduce((s, r) => s + r.fee_cents, 0),
+    expressFeesCents,
+    plus,
+    recent: rows.slice(0, 20),
+  });
+});
+
 /** Buyer payment limit. Fallback path: Checkout in setup mode saves a card; cap enforced in settleAuction. */
 payments.get("/buy/setup", async (c) => {
   const buyerId = c.req.query("buyer");
@@ -168,11 +348,7 @@ payments.get("/buy/setup", async (c) => {
   if (stubMode(c.env)) return c.redirect(`/buy/done?buyer=${buyer.id}`);
 
   const s = stripe(c.env);
-  let customer = buyer.stripe_customer_id;
-  if (!customer) {
-    customer = (await s.customers.create({ name: buyer.name, email: buyer.email ?? undefined, metadata: { buyerId: buyer.id } })).id;
-    await c.env.DB.prepare("UPDATE buyers SET stripe_customer_id = ? WHERE id = ?").bind(customer, buyer.id).run();
-  }
+  const customer = await ensureCustomer(c.env, buyer);
   const session = await s.checkout.sessions.create({
     mode: "setup",
     customer,
@@ -249,7 +425,9 @@ payments.post("/api/auctions/:id/shipped", requireApiKey, async (c) => {
 });
 
 payments.post("/api/auctions/:id/delivered", requireApiKey, async (c) => {
-  await release(c.env, c.req.param("id"));
+  const { express } = await c.req.json<{ express?: boolean }>().catch(() => ({}) as { express?: boolean });
+  if (express) await releaseExpress(c.env, c.req.param("id"));
+  else await release(c.env, c.req.param("id"));
   return c.json({ ok: true });
 });
 

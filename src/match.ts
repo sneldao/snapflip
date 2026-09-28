@@ -89,6 +89,18 @@ export async function findCandidates(env: Env, snap: Snap): Promise<Valuation[]>
     .bind(snap.skuId)
     .all<{ id: string; buyer_id: string; rules_json: string; rules_text: string; max_cents: number; limit_cents: number }>();
 
+  // Buyer Plus perk: Plus agents lead the field, so on equal dropoutCents the auction's
+  // earliest-wins tie-break favors them (and they take the low Agent numbers). Best-effort:
+  // a missing subscriptions table must never break matching.
+  let plusBuyers = new Set<string>();
+  try {
+    const { results: subs } = await env.DB.prepare(
+      `SELECT buyer_id FROM subscriptions WHERE status IN ('active', 'trialing')
+        AND (current_period_end IS NULL OR current_period_end > strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`,
+    ).all<{ buyer_id: string }>();
+    plusBuyers = new Set(subs.map((r) => r.buyer_id));
+  } catch { /* pre-Plus database: nobody is Plus */ }
+
   const deterministic = results.map((r) => ({
     val: valueForOrder(
       { orderId: r.id, buyerId: r.buyer_id, rules: JSON.parse(r.rules_json), maxCents: r.max_cents, buyerLimitCents: r.limit_cents },
@@ -96,6 +108,10 @@ export async function findCandidates(env: Env, snap: Snap): Promise<Valuation[]>
     ),
     rulesText: r.rules_text,
   }));
+  // Stable partition: eligible Plus orders first, everything else keeps created_at order.
+  deterministic.sort((a, b) =>
+    Number(b.val.eligible && plusBuyers.has(b.val.buyerId)) - Number(a.val.eligible && plusBuyers.has(a.val.buyerId)),
+  );
 
   // Deterministic result is the source of truth for money. Claude only refines eligible matches.
   if (!llmAvailable(env)) return deterministic.map((d) => d.val);

@@ -15,7 +15,7 @@ Collectors have the opposite problem. They know exactly what they want and what 
 1. **Buyers set standing orders with an agent.** "Pokémon Yellow, cartridge only, authentic, good label, up to $45." They can do this through Claude (MCP), a Brainbase-hosted concierge, or the web. The buyer grants a spending limit that only works at SnapFlip, is capped, and expires.
 2. **A reseller snaps an item at the thrift store** (Telegram). Claude identifies the exact SKU and grades its condition from the photo.
 3. **A flash auction starts** among every buyer agent whose order matches. It's a 60-second ascending-clock auction. The price ticks up, and each agent drops out once the price passes what its buyer would pay *for this specific item and grade*. The seller watches the bids climb live on their phone.
-4. **The seller decides with certainty.** "Cleared at $38. You net $30.20 after fees. Rack price $6." They buy the item, confirm with a photo, and the buyer's card is charged.
+4. **The seller decides with certainty.** "Cleared at $38. You net $34.20 after fees. Rack price $6." They buy the item, confirm with a photo, and the buyer's card is charged.
 5. **The item ships, and funds release to the seller on delivery** (Stripe Connect).
 
 If the price doesn't clear the seller's reserve, they walk away and have lost nothing.
@@ -29,7 +29,7 @@ If the price doesn't clear the seller's reserve, they walk away and have lost no
 
 ## Business model
 
-A 10% seller fee on the clearing price, against roughly 13% on eBay and 20% on Poshmark. Sellers accept it because the item is already sold. Later: a buyer subscription for priority matching, and data products built on real-time demand.
+A 10% seller fee on the clearing price (`SELLER_FEE_BPS`, snapshotted per sale into the `platform_fees` ledger so rate changes never rewrite history), against typically 13–15% all-in on eBay and 20% on Poshmark. Sellers accept it because the item is already sold — the fee is quoted live on every auction page and broken out in the seller's payout message. Later: a buyer subscription for priority matching, and data products built on real-time demand.
 
 ## Wedge
 

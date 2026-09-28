@@ -15,6 +15,10 @@ export interface Env {
   PUBLIC_URL: string;
   CLAUDE_MODEL: string;
   SELLER_FEE_BPS: string;
+  /** Stripe Price id for Buyer Plus ($6/mo recurring). Absent = Plus checkout disabled. */
+  BUYER_PLUS_PRICE_ID?: string;
+  /** Rush fee for express seller payout, bps. Defaults to 100 (1%). */
+  EXPRESS_FEE_BPS?: string;
   TELEGRAM_BOT_USERNAME?: string;
 
   // Secrets
@@ -136,9 +140,11 @@ export interface AuctionView {
   endsAt: number; // epoch ms
   /** True during the soft-close "going once" window: price holds, dropped agents may raise back in. */
   closing?: boolean;
+  /** Live take rate in basis points, so clients can quote the seller net as the clock ticks. */
+  feeBps: number;
   active: { orderId: string; label: string }[];
   dropped: { orderId: string; label: string; atCents: number; reason: string }[];
-  winner?: { orderId: string; label: string; priceCents: number };
+  winner?: { orderId: string; label: string; priceCents: number; feeBps: number; feeCents: number; netCents: number };
 }
 
 /** Winner first, then fallbacks in order — everyone pays the same clearing price. */
@@ -158,7 +164,7 @@ export interface NotifyTarget {
 
 export type NotifyEvent =
   | { type: "agent_dropped"; auctionId: string; orderId: string; title: string; atCents: number; reason: string }
-  | { type: "auction_won"; auctionId: string; title: string; priceCents: number }
+  | { type: "auction_won"; auctionId: string; title: string; priceCents: number; maxCents: number }
   | { type: "presold"; auctionId: string; title: string; priceCents: number; netCents: number }
   | { type: "no_sale"; auctionId: string; title: string }
   | { type: "settlement_failed"; auctionId: string; title: string; reason: string }

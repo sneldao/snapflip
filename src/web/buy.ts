@@ -5,6 +5,7 @@ import { html } from "hono/html";
 import { z } from "zod";
 import { buyerIdForToken, newBuyerToken } from "../lib/tokens";
 import { newId, requireApiKey, usd, type App } from "../lib/util";
+import { isPlus } from "../payments";
 import { cancelOrder, createOrder, listOrders } from "../orders";
 // Grade caps from the optional form fields are folded into the rules text the LLM parser reads.
 import type { Env, Grade } from "../types";
@@ -94,7 +95,13 @@ const buyForm = (catalog: string[], error?: string, v: FormValues = {}) => html`
 
 buy.get("/buy", async (c) => {
   const { results } = await titles(c.env);
-  return c.html(layout("SnapFlip: set a standing order", buyForm(results.map((s) => s.title))));
+  const catalog = results.map((s) => s.title);
+  // Deep-link prefill: /buy?sku=pokemon+yellow&max=45 lands with the form filled.
+  const pre = (c.req.query("sku") ?? "").slice(0, 120);
+  const hit = pre ? catalog.find((t) => t.toLowerCase() === pre.toLowerCase()) ?? pre : "";
+  const preMax = (c.req.query("max") ?? "").trim();
+  const maxOk = /^\d{1,4}$/.test(preMax) && Number(preMax) >= 1 && Number(preMax) <= 1000 ? preMax : "";
+  return c.html(layout("SnapFlip: set a standing order", buyForm(catalog, undefined, { ...(hit ? { rules: hit } : {}), ...(maxOk ? { max: maxOk } : {}) }), { image: `${c.env.PUBLIC_URL}/og.png` }));
 });
 
 // Optional per-grade caps: blank means "no cap for this grade", 0 means "never buy this grade".
@@ -248,6 +255,7 @@ buy.get("/buy/done", async (c) => {
               <p class="muted"><strong>This URL is a password.</strong> Anyone who has it can act as your buyer. Don't share it.</p>
             </div>`
           : null}`,
+      { image: `${c.env.PUBLIC_URL}/og.png` },
     ),
   );
 });
@@ -267,11 +275,41 @@ buy.get("/buy/orders", async (c) => {
     );
   }
   const mine = await listOrders(c.env, buyerId);
+  const plus = await isPlus(c.env, buyerId);
+  const plusCard = plus
+    ? html`<div class="card"><h2>✦ Plus active</h2><p class="muted" style="margin:0">Your agents win the ties. <a href="/buy/plus?buyer=${buyerId}">Manage &rarr;</a></p></div>`
+    : html`<div class="card"><h2>Go Plus — $6/mo</h2><p class="muted" style="margin:0 0 10px">Tie-break priority when maxes collide, plus the badge. <a class="button" href="/buy/plus?buyer=${buyerId}" style="margin-left:8px">Win the ties</a></p></div>`;
+  // Win receipts: filled orders joined to their clearing auction — the "you paid
+  // clearing, not max" proof. Best-effort; a missing join never breaks the page.
+  let wins: { rulesText: string; maxCents: number; clearingCents: number; title: string; endedAt: string }[] = [];
+  try {
+    const { results } = await c.env.DB.prepare(
+      `SELECT o.rules_text AS rulesText, o.max_cents AS maxCents, a.clearing_cents AS clearingCents,
+              COALESCE(sk.title, 'item') AS title, a.ended_at AS endedAt
+         FROM orders o JOIN auctions a ON a.winner_order_id = o.id
+         LEFT JOIN snaps sn ON sn.id = a.snap_id LEFT JOIN skus sk ON sk.id = sn.sku_id
+        WHERE o.buyer_id = ? AND o.status = 'filled' AND a.clearing_cents IS NOT NULL
+        ORDER BY a.ended_at DESC LIMIT 10`,
+    ).bind(buyerId).all<{ rulesText: string; maxCents: number; clearingCents: number; title: string; endedAt: string }>();
+    wins = results;
+  } catch { /* pre-ledger or empty: no receipts */ }
+  const receiptCard = (w: (typeof wins)[number]) => html`<div class="receipt">
+    <h2>Won · ${w.title}</h2>
+    <p class="muted" style="margin: 0">${w.endedAt.slice(0, 10)} · ${w.rulesText}</p>
+    <div class="rule">
+      <strong>Cleared ${usd(w.clearingCents)}</strong>
+      <span class="muted"> — ${usd(w.maxCents - w.clearingCents)} under your ${usd(w.maxCents)} max</span>
+    </div>
+    <p class="thanks">You paid clearing, never max</p>
+  </div>`;
   return c.html(
     layout(
       "SnapFlip: your orders",
-      html`<h1>Your standing orders</h1>
+      html`${receiptStyle}
+        <h1>Your standing orders</h1>
         <p class="muted">Your agent bids in every matching auction, never above your max.</p>
+        ${plusCard}
+        ${wins.length ? html`<h2 style="margin-top:22px">Your wins</h2>${wins.map(receiptCard)}` : null}
         ${mine.length === 0
           ? html`<div class="card"><p class="muted">No orders yet. <a href="/buy">Set one now.</a></p></div>`
           : null}
@@ -293,6 +331,7 @@ buy.get("/buy/orders", async (c) => {
           </div>`,
         )}
         <p class="muted"><a href="/buy">+ New standing order</a></p>`,
+      { image: `${c.env.PUBLIC_URL}/og.png` },
     ),
   );
 });

@@ -4,6 +4,7 @@ import { Hono } from "hono";
 import { findCandidates } from "./match";
 import { settleAuction } from "./payments";
 import { notify } from "./telegram";
+import { PLATFORM_FEES_DDL, feeLedgerRow, sellerFeeBps, splitFee } from "./lib/fees";
 import { devOnly, newId, nowIso, requireApiKey, type App } from "./lib/util";
 import type { AuctionStatus, AuctionView, BidEvent, Env, Snap, Valuation } from "./types";
 
@@ -240,6 +241,8 @@ export class AuctionDO extends DurableObject<Env> {
 
   private async persistAndSettle(s: State, winner: Bidder | undefined): Promise<void> {
     const db = this.env.DB;
+    // Ledger must exist on DBs created before it was added to schema.sql.
+    await db.prepare(PLATFORM_FEES_DDL).run();
     await db.batch([
       db.prepare("UPDATE auctions SET status = ?, ended_at = ?, clearing_cents = ?, winner_order_id = ? WHERE id = ?")
         .bind(s.status, nowIso(), winner ? s.priceCents : null, winner?.orderId ?? null, s.id),
@@ -270,14 +273,20 @@ export class AuctionDO extends DurableObject<Env> {
     }
 
     const buyer = s.bidders.find((b) => b.orderId === result.orderId)!;
-    const feeBps = Number(this.env.SELLER_FEE_BPS || "1000");
-    const netCents = result.priceCents - Math.round((result.priceCents * feeBps) / 10_000);
+    const feeBps = sellerFeeBps(this.env);
+    const { netCents } = splitFee(result.priceCents, feeBps);
+    const ledger = feeLedgerRow(s.id, result.priceCents, feeBps);
     await db.batch([
       db.prepare("UPDATE auctions SET status = 'settled', payment_intent_id = ?, winner_order_id = ?, clearing_cents = ? WHERE id = ?")
         .bind(result.paymentIntentId, result.orderId, result.priceCents, s.id),
       db.prepare("UPDATE orders SET status = 'filled' WHERE id = ?").bind(result.orderId),
+      // Fee snapshot: history stays correct even if SELLER_FEE_BPS changes later.
+      db.prepare("INSERT OR IGNORE INTO platform_fees (auction_id, clearing_cents, fee_bps, fee_cents) VALUES (?, ?, ?, ?)")
+        .bind(ledger.auction_id, ledger.clearing_cents, ledger.fee_bps, ledger.fee_cents),
     ]);
-    await notify(this.env, { buyerId: buyer.buyerId }, { type: "auction_won", auctionId: s.id, title: s.title, priceCents: result.priceCents });
+    const wonOrder = await db.prepare("SELECT max_cents FROM orders WHERE id = ?").bind(result.orderId).first<{ max_cents: number }>();
+    const wonMaxCents = wonOrder?.max_cents ?? buyer.limitCents;
+    await notify(this.env, { buyerId: buyer.buyerId }, { type: "auction_won", auctionId: s.id, title: s.title, priceCents: result.priceCents, maxCents: wonMaxCents });
     await notify(this.env, { sellerId: s.sellerId }, { type: "presold", auctionId: s.id, title: s.title, priceCents: result.priceCents, netCents });
   }
 
@@ -294,6 +303,8 @@ export class AuctionDO extends DurableObject<Env> {
 
   private view(s: State): AuctionView {
     const winner = s.winner && s.bidders.find((b) => b.orderId === s.winner!.orderId);
+    const feeBps = sellerFeeBps(this.env);
+    const fee = s.winner ? splitFee(s.winner.priceCents, feeBps) : null;
     return {
       type: "state",
       id: s.id,
@@ -304,11 +315,21 @@ export class AuctionDO extends DurableObject<Env> {
       reserveCents: s.reserveCents,
       endsAt: s.endsAt,
       closing: s.closing === true,
+      feeBps,
       active: s.bidders.filter((b) => b.active).map((b) => ({ orderId: b.orderId, label: b.label })),
       dropped: s.bidders
         .filter((b) => !b.active)
         .map((b) => ({ orderId: b.orderId, label: b.label, atCents: b.droppedAtCents ?? s.priceCents, reason: b.reason })),
-      winner: s.winner && winner ? { orderId: s.winner.orderId, label: winner.label, priceCents: s.winner.priceCents } : undefined,
+      winner: s.winner && winner && fee
+        ? {
+            orderId: s.winner.orderId,
+            label: winner.label,
+            priceCents: s.winner.priceCents,
+            feeBps,
+            feeCents: fee.feeCents,
+            netCents: fee.netCents,
+          }
+        : undefined,
     };
   }
 }

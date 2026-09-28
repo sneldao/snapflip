@@ -3,11 +3,12 @@ import { Hono } from "hono";
 import { startAuction } from "./auction";
 import { buyerAgent } from "./buyer";
 import { findCandidates } from "./match";
-import { capture, release } from "./payments";
+import { capture, expressEligible, release, releaseExpress } from "./payments";
+import { expressFeeBps, sellerFeeBps, splitExpress, splitFee } from "./lib/fees";
 import { grade, identify } from "./vision";
 import { newId, safeEqual, usd, type App } from "./lib/util";
-import type { Env, Identification, NotifyEvent, NotifyTarget, Snap } from "./types";
 import { nearbyDemand, offerWatch, ordinal, snapsToday } from "./watches";
+import type { Env, Identification, NotifyEvent, NotifyTarget, Snap } from "./types";
 
 // Below this identification confidence, ask the seller to pick from Claude's top matches
 // instead of guessing — a wrong SKU would start an auction against the wrong buyers.
@@ -107,11 +108,11 @@ export async function notify(env: Env, to: NotifyTarget, event: NotifyEvent): Pr
       break;
     }
     case "auction_won":
-      text = `<code>WON ${usd(event.priceCents)}</code> · ${esc(event.title)}\nCard authorized, not charged. You pay only once the seller has the item in hand.`;
+      text = `<code>WON ${usd(event.priceCents)}</code> · ${esc(event.title)}\n${usd(event.maxCents - event.priceCents)} under your ${usd(event.maxCents)} max — clearing, not max. Card authorized, charged once the seller has it in hand.`;
       buttons = [[{ text: "Watch live", url: link(event.auctionId) }]];
       break;
     case "presold":
-      text = `<code>SOLD ${usd(event.priceCents)}</code> · ${esc(event.title)}\nCleared your floor. You net <b>${usd(event.netCents)}</b>.\n▸ Grab it off the rack, then tap below.`;
+      text = `<code>SOLD ${usd(event.priceCents)}</code> · ${esc(event.title)}\nCleared at ${usd(event.priceCents)} (incl. ${usd(event.priceCents - event.netCents)} SnapFlip fee) — you net <b>${usd(event.netCents)}</b>.\n▸ Grab it off the rack, then tap below.`;
       buttons = [[{ text: "I bought it", callback_data: `confirm:${event.auctionId}` }]];
       break;
     case "no_sale":
@@ -323,20 +324,39 @@ async function handleUpdate(env: Env, u: TgUpdate): Promise<void> {
     const toasts: Record<string, string> = {
       confirm: "Capturing payment…",
       delivered: "Releasing payout…",
+      express: "Rushing payout…",
       raise: "Raising your max…",
       pick: "Got it — grading…",
       watch: "Watching — I'll ping you",
     };
     await tg(env, "answerCallbackQuery", { callback_query_id: u.callback_query.id, text: toasts[action] });
     let stripped = false;
-    if (["confirm", "delivered", "raise"].includes(action) && cbMsg) {
+    if (["confirm", "delivered", "express", "raise"].includes(action) && cbMsg) {
       await tg(env, "editMessageReplyMarkup", { chat_id: cbMsg.chat.id, message_id: cbMsg.message_id, reply_markup: { inline_keyboard: [] } }).catch(() => {});
       stripped = true;
     }
     try {
       if (action === "confirm") {
         await capture(env, parts[1]);
-        if (chatId) await send(env, chatId, "<code>CAPTURED</code> Payment's in. Ship it, then tap below.", [[{ text: "Delivered (demo)", callback_data: `delivered:${parts[1]}` }]]);
+        // Trusted sellers get the express choice: cash out now (−1% rush) or on delivery (free).
+        const snap = await env.DB.prepare(
+          `SELECT sn.seller_id, a.clearing_cents FROM auctions a JOIN snaps sn ON sn.id = a.snap_id WHERE a.id = ?`,
+        ).bind(parts[1]).first<{ seller_id: string; clearing_cents: number | null }>();
+        if (snap && (await expressEligible(env, snap.seller_id))) {
+          const { netCents } = splitFee(snap.clearing_cents ?? 0, sellerFeeBps(env));
+          const { expressFeeCents, payoutCents } = splitExpress(netCents, expressFeeBps(env));
+          if (chatId) {
+            await send(env, chatId, `<code>CAPTURED</code> Payment's in. Ship it — or skip the wait:\n⚡ Express payout <b>${usd(payoutCents)}</b> now (−${usd(expressFeeCents)} rush).`, [
+              [{ text: `⚡ Express ${usd(payoutCents)}`, callback_data: `express:${parts[1]}` }],
+              [{ text: "Delivered (demo)", callback_data: `delivered:${parts[1]}` }],
+            ]);
+          }
+        } else if (chatId) {
+          await send(env, chatId, "<code>CAPTURED</code> Payment's in. Ship it, then tap below.", [[{ text: "Delivered (demo)", callback_data: `delivered:${parts[1]}` }]]);
+        }
+      } else if (action === "express") {
+        const { payoutCents } = await releaseExpress(env, parts[1]);
+        if (chatId) await send(env, chatId, `<code>EXPRESS PAID ${usd(payoutCents)}</code>\nTransferred to your Stripe account. Happy flipping.`);
       } else if (action === "delivered") {
         await release(env, parts[1]);
       } else if (action === "raise") {

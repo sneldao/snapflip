@@ -8,6 +8,8 @@ type Body = HtmlEscapedString | Promise<HtmlEscapedString>;
 interface LayoutOpts {
   /** CRT mode: scanline + vignette overlay for the live-auction screen. */
   crt?: boolean;
+  /** Absolute URL of the share image (og:image / twitter:image). */
+  image?: string;
 }
 
 export const layout = (title: string, body: Body, opts: LayoutOpts = {}) => html`<!doctype html>
@@ -17,6 +19,16 @@ export const layout = (title: string, body: Body, opts: LayoutOpts = {}) => html
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#070a08" />
     <meta name="description" content="SnapFlip — tell an agent what you're hunting. It bids in live auctions, never above your max." />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="${title}" />
+    <meta property="og:description" content="SnapFlip — tell an agent what you're hunting. It bids in live auctions, never above your max." />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="${title}" />
+    <meta name="twitter:description" content="SnapFlip — tell an agent what you're hunting. It bids in live auctions, never above your max." />
+    ${opts.image
+      ? html`<meta property="og:image" content="${opts.image}" />
+    <meta name="twitter:image" content="${opts.image}" />`
+      : html``}
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%23070a08'/%3E%3Ctext x='2' y='12.5' font-family='monospace' font-size='11' font-weight='bold' fill='%2346ff8f'%3ES%3E%3C/text%3E%3C/svg%3E" />
     <title>${title}</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />

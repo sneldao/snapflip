@@ -12,6 +12,7 @@
     "tg:webhook": "node scripts/set-webhook.mjs",
     "tg:profile": "node scripts/set-bot-profile.mjs",
     "prepare": "husky",
+    "test": "node --test \"tests/**/*.test.ts\"",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix"
   },
