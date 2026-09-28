@@ -66,7 +66,8 @@ At auction time, for each candidate order, Claude receives the photo, the grade 
 |---|---|
 | `src/index.ts` | Router: HTTP endpoints, Telegram webhook, Stripe webhook, MCP mount |
 | `src/vision.ts` | Model calls: `identify(photo) → {sku_id, title, confidence}`, `grade(photo) → {grade, notes, flags}` (Anthropic, falling back to Featherless) |
-| `src/match.ts` | Candidate lookup (D1) and Claude verification and valuation for each order |
+| `src/match.ts` | Candidate lookup (D1) and Claude verification and valuation for each order (fan-out capped at 5 concurrent calls) |
+| `src/lib/claude.ts` | Model gateway: Anthropic → Featherless fallback, `llm_cache` response dedupe (D1), 20s attempt timeout, Anthropic prompt caching |
 | `src/auction.ts` | `AuctionDO`: state machine, alarm clock, WebSocket fan-out, writes result to D1 |
 | `src/buyer.ts` | `BuyerAgent` (Agents SDK): orders, payment reference, notifications, raise-max handling |
 | `src/payments.ts` | Stripe: setup, off-session PaymentIntent (manual capture), capture, transfer, Connect onboarding, refund, void-stale-auth sweep (cron) |
@@ -74,6 +75,7 @@ At auction time, for each candidate order, Claude receives the photo, the grade 
 | `src/mcp.ts` | Remote MCP server (`McpAgent`): buyer tools, authenticated per buyer by token |
 | `src/lib/tokens.ts` | Per-buyer bearer tokens (`sf_…`): shown once, stored as SHA-256 (`buyers.token_hash`) |
 | `web/` | Landing page with live order book depth, `/a/{id}` live auction page, `/buy` onboarding |
+| `concierge/` | Brainbase agent manifest + instructions for the hosted buyer concierge (`snapflip-concierge`) |
 
 ## Endpoints
 
@@ -97,7 +99,7 @@ At auction time, for each candidate order, Claude receives the photo, the grade 
 | GET | `/buy/setup` | Stripe Checkout (setup mode) → saved card + code-enforced limit |
 | GET | `/sell/onboard` | Stripe Connect Express onboarding link |
 | POST | `/webhooks/stripe` | `checkout.session.completed`, `setup_intent.succeeded`, `payment_intent.*`, `account.updated` |
-| — | `/mcp` | MCP tools: `catalog`, `my_account`, `orderbook`, `create_standing_order`, `list_my_orders`, `cancel_order`, `get_auction`. Auth: per-buyer token (`Bearer` or `?token=`) |
+| — | `/mcp` | MCP tools: `catalog`, `my_account`, `orderbook`, `create_standing_order`, `list_my_orders`, `cancel_order`, `raise_max`, `get_auction`. Auth: per-buyer token (`Bearer` or `?token=`) |
 
 ## Payments flow
 
@@ -118,9 +120,10 @@ order_skus (order_id, sku_id)                          -- index for matching
 snaps    (id, seller_id, r2_key, sku_id, confidence, grade, grade_notes, flags_json, rack_cents, reserve_cents, created_at)
 auctions (id, snap_id, status, started_at, ended_at, clearing_cents, winner_order_id, payment_intent_id, transfer_id)
 bids     (auction_id, order_id, event, price_cents, reason, at)   -- event: join | drop | raise | win
+llm_cache (key, response, created_at)                           -- model response dedupe; key = SHA-256(request)
 ```
 
-Photos go in R2 (`snaps/{id}.jpg`). Live auction state lives in `AuctionDO` storage and is written to D1 when the auction ends. Match and valuation calls fan out through a Queue when there are more than about 5 candidates.
+Photos go in R2 (`snaps/{id}.jpg`). Live auction state lives in `AuctionDO` storage and is written to D1 when the auction ends. Per-order model verification runs inline, chunked at 5 concurrent calls per snap (`VERIFY_CONCURRENCY`).
 
 ## Trust and safety
 
