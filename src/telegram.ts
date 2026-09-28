@@ -5,7 +5,11 @@ import { findCandidates } from "./match";
 import { capture, release } from "./payments";
 import { grade, identify } from "./vision";
 import { newId, safeEqual, usd, type App } from "./lib/util";
-import type { Env, NotifyEvent, NotifyTarget, Snap } from "./types";
+import type { Env, Identification, NotifyEvent, NotifyTarget, Snap } from "./types";
+
+// Below this identification confidence, ask the seller to pick from Claude's top matches
+// instead of guessing — a wrong SKU would start an auction against the wrong buyers.
+const CONFIDENCE_THRESHOLD = 0.75;
 
 interface TgMessage {
   message_id: number;
@@ -20,6 +24,11 @@ interface TgUpdate {
 type Buttons = { text: string; callback_data?: string; url?: string }[][];
 
 export async function tg<T = unknown>(env: Env, method: string, body: Record<string, unknown>): Promise<T> {
+  // No token (local dev): no-op instead of hitting the real API, so callbacks don't crash.
+  if (!env.TELEGRAM_BOT_TOKEN) {
+    console.log(`[tg stub] ${method}`);
+    return {} as T;
+  }
   const res = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/${method}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -88,6 +97,21 @@ async function upsertSeller(env: Env, chatId: number): Promise<string> {
   return row!.id;
 }
 
+/** Claude's best SKU guess plus its alternatives, de-duplicated, for the picker buttons. */
+function identifyOptions(id: Identification): { skuId: string; title: string }[] {
+  const out: { skuId: string; title: string }[] = [];
+  const seen = new Set<string>();
+  const push = (skuId: string | null, title: string) => {
+    if (skuId && !seen.has(skuId)) {
+      seen.add(skuId);
+      out.push({ skuId, title });
+    }
+  };
+  push(id.skuId, id.title);
+  for (const a of id.alternatives ?? []) push(a.skuId, a.title);
+  return out;
+}
+
 async function handlePhoto(env: Env, msg: TgMessage): Promise<void> {
   const chatId = msg.chat.id;
   const sellerId = await upsertSeller(env, chatId);
@@ -101,26 +125,57 @@ async function handlePhoto(env: Env, msg: TgMessage): Promise<void> {
   await env.PHOTOS.put(r2Key, photo, { httpMetadata: { contentType: "image/jpeg" } });
 
   const id = await identify(env, photo);
-  if (!id.skuId) {
-    // TODO(A): low-confidence picker from id.alternatives.
-    await send(env, chatId, `Couldn't match this to a catalog item (${id.title}). Try another angle.`);
+  // Persist the snap up front (SKU still unknown) so a picker callback can resolve it later.
+  await env.DB.prepare("INSERT INTO snaps (id, seller_id, r2_key, confidence) VALUES (?, ?, ?, ?)")
+    .bind(snapId, sellerId, r2Key, id.confidence)
+    .run();
+
+  // Confident: grade and go straight to the reserve prompt.
+  if (id.skuId && id.confidence >= CONFIDENCE_THRESHOLD) {
+    return finalizeIdentification(env, chatId, snapId, id.skuId, id.title);
+  }
+
+  // Low confidence: let the seller pick from the top matches instead of guessing wrong.
+  const options = identifyOptions(id).slice(0, 3);
+  if (options.length) {
+    await send(
+      env,
+      chatId,
+      `Not sure which one this is${id.title ? ` — closest guess is ${id.title}` : ""}. Tap the match:`,
+      options.map((o) => [{ text: o.title, callback_data: `pick:${snapId}:${o.skuId}` }]),
+    );
     return;
   }
-  const g = await grade(env, photo, id.title);
+  await send(env, chatId, "Couldn't match this to a catalog item. Try another angle with the label in view.");
+}
+
+/** Grade the (now-known) item, save it against the snap, and prompt the seller for a reserve. */
+async function finalizeIdentification(env: Env, chatId: number, snapId: string, skuId: string, title: string): Promise<void> {
+  const row = await env.DB.prepare("SELECT seller_id, r2_key FROM snaps WHERE id = ?").bind(snapId).first<{ seller_id: string; r2_key: string }>();
+  if (!row) {
+    await send(env, chatId, "That photo expired — snap it again.");
+    return;
+  }
+  const obj = await env.PHOTOS.get(row.r2_key);
+  if (!obj) {
+    await send(env, chatId, "Lost the photo — snap it again.");
+    return;
+  }
+  const g = await grade(env, await obj.arrayBuffer(), title);
+  await env.DB.prepare("UPDATE snaps SET sku_id = ?, grade = ?, grade_notes = ?, flags_json = ? WHERE id = ?")
+    .bind(skuId, g.grade, g.notes, JSON.stringify(g.flags), snapId)
+    .run();
+
   const snap: Snap = {
-    id: snapId, sellerId, r2Key, skuId: id.skuId, title: id.title, confidence: id.confidence,
+    id: snapId, sellerId: row.seller_id, r2Key: row.r2_key, skuId, title, confidence: 1,
     grade: g.grade, gradeNotes: g.notes, flags: g.flags, rackCents: null, reserveCents: null,
   };
-  await env.DB.prepare(
-    "INSERT INTO snaps (id, seller_id, r2_key, sku_id, confidence, grade, grade_notes, flags_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-  ).bind(snap.id, sellerId, r2Key, snap.skuId, snap.confidence, snap.grade, snap.gradeNotes, JSON.stringify(snap.flags)).run();
-
   const eligible = (await findCandidates(env, snap)).filter((v) => v.eligible).length;
   // Don't reveal bid amounts: they're private to each buyer agent.
   await send(
     env,
     chatId,
-    `${id.title} (${Math.round(id.confidence * 100)}% sure), grade ${g.grade}: ${g.notes}\n` +
+    `${title}, grade ${g.grade}: ${g.notes}\n` +
       `${eligible} buyer agent${eligible === 1 ? "" : "s"} ready to bid.\n` +
       (eligible ? "Reply with your minimum price in dollars (e.g. 10) to start a 60s auction." : "No matching demand right now."),
   );
@@ -153,15 +208,21 @@ async function handleReserve(env: Env, msg: TgMessage, dollars: number): Promise
 
 async function handleUpdate(env: Env, u: TgUpdate): Promise<void> {
   if (u.callback_query) {
-    const [action, auctionId] = (u.callback_query.data ?? "").split(":");
+    const parts = (u.callback_query.data ?? "").split(":");
+    const action = parts[0];
     await tg(env, "answerCallbackQuery", { callback_query_id: u.callback_query.id });
     const chatId = u.callback_query.message?.chat.id;
     try {
       if (action === "confirm") {
-        await capture(env, auctionId);
-        if (chatId) await send(env, chatId, "Payment captured. Ship it, then tap below.", [[{ text: "Delivered (demo)", callback_data: `delivered:${auctionId}` }]]);
+        await capture(env, parts[1]);
+        if (chatId) await send(env, chatId, "Payment captured. Ship it, then tap below.", [[{ text: "Delivered (demo)", callback_data: `delivered:${parts[1]}` }]]);
       } else if (action === "delivered") {
-        await release(env, auctionId);
+        await release(env, parts[1]);
+      } else if (action === "pick") {
+        // Seller chose a SKU from the low-confidence picker: pick:<snapId>:<skuId>
+        const [, snapId, skuId] = parts;
+        const sku = await env.DB.prepare("SELECT title FROM skus WHERE id = ?").bind(skuId).first<{ title: string }>();
+        if (chatId && sku) await finalizeIdentification(env, chatId, snapId, skuId, sku.title);
       }
     } catch (e) {
       if (chatId) await send(env, chatId, `Couldn't do that: ${(e as Error).message}`);
