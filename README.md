@@ -39,9 +39,9 @@ A 10% seller fee on the clearing price, against roughly 13% on eBay and 20% on P
 
 | Sponsor | Used for |
 |---|---|
-| Anthropic | Claude vision (SKU identification and condition grading), match verification, parsing plain-English order rules and valuing each item against them |
+| Anthropic | Claude vision (SKU identification and condition grading), match verification, parsing plain-English order rules and valuing each item against them (Featherless as the OpenAI-compatible fallback provider) |
 | Cloudflare | Workers, Agents SDK (one Durable Object per buyer agent), a Durable Object per auction (alarms for the clock, hibernatable WebSockets for live bids), remote MCP server, D1, R2, Queues |
-| Stripe | Buyer spending limits (Shared Payment Tokens, falling back to a saved card charged off-session), manual capture, Connect Express seller payouts via separate charges and transfers, webhooks |
+| Stripe | Buyer spending limits (saved card charged off-session, cap enforced in code; Shared Payment Tokens slot in later), manual capture, Connect Express seller payouts via separate charges and transfers, webhooks |
 | Brainbase | Hosted buyer concierge worker (chat deployment) that creates standing orders through our API |
 
 **Live:** https://go.snapflip.workers.dev — landing page with real-time demand; `/buy` to set a standing order, `/mcp?token=…` as a Claude connector.
