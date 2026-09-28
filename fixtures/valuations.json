@@ -1,0 +1,7 @@
+[
+  { "orderId": "o_demo_1", "buyerId": "b_demo_1", "eligible": true, "dropoutCents": 2500, "limitCents": 2500, "reason": "max $25" },
+  { "orderId": "o_demo_2", "buyerId": "b_demo_2", "eligible": true, "dropoutCents": 3200, "limitCents": 3200, "reason": "max $32" },
+  { "orderId": "o_demo_3", "buyerId": "b_demo_3", "eligible": true, "dropoutCents": 3000, "limitCents": 4500, "reason": "grade B, capped at $30" },
+  { "orderId": "o_demo_4", "buyerId": "b_demo_4", "eligible": true, "dropoutCents": 3800, "limitCents": 3800, "reason": "max $38" },
+  { "orderId": "o_demo_5", "buyerId": "b_demo_5", "eligible": false, "dropoutCents": 0, "limitCents": 6000, "reason": "grade B not accepted" }
+]

@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -e
+
+gitleaks protect --verbose --redact --staged || {
+  echo "gitleaks found potential secrets in staged changes. Commit aborted."
+  echo "If this is a false positive, use 'git commit --no-verify' or add an allowlist to .gitleaks.toml"
+  exit 1
+}
+
+npx lint-staged
+npx tsc --noEmit

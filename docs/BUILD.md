@@ -12,43 +12,74 @@ Four people in parallel. **Hard stop 3:30 PM PT. Final video take recorded by 2:
 
 ## Phase 0 — contracts (first 20 min, everyone together)
 
-Agree on these, commit them, then split up:
+The scaffold in this repo already contains the contracts. Read them, change anything you disagree with *now*, then split up:
 
-- `schema.sql` (from ARCHITECTURE.md) and `src/types.ts`: `Sku`, `Order`, `OrderRules`, `Snap`, `Grade`, `AuctionState`, `BidEvent`, `Valuation`.
-- `AuctionDO` interface: `start(snapId, candidates: Valuation[], reserveCents)`, `raise(orderId, newMaxCents)`, WebSocket message shape `{type, priceCents, active, dropped[], endsAt}`.
-- One `wrangler.jsonc` with D1, R2, Queue, DO bindings. Deployed empty to `*.workers.dev` so everyone deploys to the same place.
-- Seed data: 30 SKUs for the games we can physically get today, with reference prices.
+- `src/types.ts`: shared types (`Sku`, `Order`, `OrderRules`, `Snap`, `Grade`, `Valuation`, `AuctionView`, `BidEvent`, `NotifyEvent`, `Env`).
+- The five handoff functions below. Each one starts as a stub in its owner's file, so everyone can build against it straight away.
+- `schema.sql` / `seed.sql`, and `wrangler.jsonc` with D1, R2, Queue and DO bindings.
+
+### Handoff functions
+
+| Function | Called by → owned by | File |
+|---|---|---|
+| `startAuction(env, snap, reserveCents) → {auctionId}` | A → B | `src/auction.ts` |
+| `settleAuction(env, auctionId, ranked[]) → {ok, orderId, paymentIntentId}` | B → C | `src/payments.ts` |
+| `capture(env, auctionId)` / `release(env, auctionId)` | A → C | `src/payments.ts` |
+| `notify(env, to, event)` | B, C → A | `src/telegram.ts` |
+| `POST /api/orders {buyerId, rulesText, maxCents} → Order` | D → B | `src/orders.ts` |
+
+Swap a stub for the real implementation without changing its signature. If you must change a signature, say so in the team chat before merging.
 
 ## Workstreams
 
-### A — Seller intake and vision
-- Telegram bot: photo → R2 → `identify` + `grade` → "Matched 4 standing orders. Set your rack price." → reserve → start auction.
-- Live auction message: edit the Telegram message on each tick (or link to `/a/{id}`).
-- Confirm purchase (photo) and shipped buttons.
-- Low-confidence path: pick from top 3 SKUs.
+| Dev | Owns | Files |
+|---|---|---|
+| **A — Seller** | Telegram bot, vision, reserve → start auction, confirm/ship buttons, all notifications, live `/a/{id}` page | `telegram.ts`, `vision.ts`, `web/auction.ts` |
+| **B — Engine** | Order rule parsing, matching + valuation, `AuctionDO`, `BuyerAgent` | `orders.ts`, `match.ts`, `auction.ts`, `buyer.ts` |
+| **C — Money** | Payment limits, authorize/capture/cancel with fallback, Connect, webhook, schema + seed, **sole deployer** | `payments.ts`, `stripe-webhook.ts`, `schema.sql`, `seed.sql`, `wrangler.jsonc` |
+| **D — Buyer + go-to-market** | MCP server, Brainbase concierge, `/buy` and landing pages, recruiting, physical items, video, Devpost | `mcp.ts`, `web/landing.ts`, `web/buy.ts`, `DEMO.md` |
+
+### A — Seller
+- Telegram: photo → R2 → `identify` + `grade` → "Matched 4 standing orders. Set your rack price." → reserve → `startAuction`.
+- `notify()` for every buyer/seller message. Live auction updates by editing the Telegram message, or linking to `/a/{id}`.
+- `/a/{id}` page: subscribes to `/a/{id}/ws` and renders the price ticker and dropouts.
+- Confirm purchase (photo) → `capture`. Shipped button. Low-confidence path: pick from the top 3 SKUs.
 - **Done when:** a real cartridge photo returns the right SKU and a sensible grade 5 times in a row.
 
-### B — Order book, buyer agents, auction engine
-- `/api/orders` with Claude rule parsing → `rules_json`.
-- `match.ts`: candidates by SKU, then Claude valuation per order, capped in code.
-- `AuctionDO`: alarm clock, dropouts, soft close, result to D1, WebSocket fan-out.
-- `BuyerAgent`: notifications, raise-max replies.
-- MCP server with buyer tools. Test from Claude.
+### B — Engine
+- `/api/orders`: Claude parses rules into `rules_json`; also writes `order_skus`.
+- `match.ts`: candidates by SKU, then a Claude valuation per order, **capped in code** by `max_cents` and the buyer's `limit_cents`.
+- `AuctionDO`: alarm clock, dropouts, soft close, WebSocket broadcast, result to D1, then `settleAuction`.
+- `BuyerAgent`: raise-max handling, per-buyer state.
+- Test with `fixtures/valuations.json` (no photos needed).
 - **Done when:** 5 seeded agents run a full auction from a fake snap, with the correct winner and price.
 
-### C — Payments
+### C — Money
 - `/buy/setup` → payment limit stored. Try SPT first, time-boxed to 45 min.
-- On clear: manual-capture PaymentIntent; fallback to the next bidder if it fails.
-- Capture on confirm, Transfer on delivered, Connect Express onboarding for sellers.
-- Stripe webhook handler with signature check.
+- `settleAuction`: manual-capture PaymentIntent, off-session; try the next ranked bidder if it fails.
+- `capture` on confirm, `release` (Transfer) on delivered, Connect Express onboarding at `/sell/onboard`.
+- `/webhooks/stripe` with signature check. Test with `stripe listen --forward-to localhost:8787/webhooks/stripe`.
+- Create D1/R2/Queue resources, own `wrangler deploy`.
 - **Done when:** a real $1 end-to-end run works in live mode: authorize → capture → transfer shows in the Dashboard.
 
-### D — Go-to-market, demo, and Brainbase
+### D — Buyer + go-to-market
+- MCP server first (quick, and it unblocks recruiting): tools call the same logic as `/api/orders`.
 - Brainbase concierge worker: chat → `/api/orders`. Go to their booth first to confirm the integration path.
 - Landing page: live "$X of standing demand across N collectors" from `/api/orderbook`, plus a QR code to `/buy`.
 - **Recruit real buyers onsite:** goal 15+ attendees with standing orders and payment limits, including at least one judge if allowed.
-- Get physical items: thrift or local game store run, or teammates' own cartridges. Record the real rack price.
+- Get physical items (thrift or local game store run, or teammates' own cartridges) and record the real rack price.
 - Own `DEMO.md`: script, shots, filming, editing, upload, Devpost, X post.
+
+**Critical path:** A's vision identifying cartridges reliably, and B's `AuctionDO` running. If either is behind at +75 min, D pauses recruiting to help. The Brainbase concierge is the first thing to drop.
+
+## Repo conventions
+
+- **Sub-routers:** each file exports a Hono router, and `src/index.ts` only mounts them. Don't put routes in `index.ts`.
+- **Git:** small PRs to `main` at least every 45 min. No long-lived branches. Pull before you start each block.
+- **Local dev:** `npm run dev` (local D1/R2). Apply the schema locally with `npm run db:local`. Copy `.dev.vars.example` to `.dev.vars` (gitignored) and fill in your own keys.
+- **Telegram:** each dev makes their own test bot with BotFather. Expose local dev with `cloudflared tunnel --url http://localhost:8787`, then run `npm run tg:webhook -- <tunnel-url>`.
+- **Deploys:** only C runs `npm run deploy`, from `main`. Shared secrets are set once with `wrangler secret put`.
+- **Before pushing:** `npm run check` (typecheck and a wrangler dry-run build) must pass.
 
 ## Integration milestones
 

@@ -1,0 +1,38 @@
+{
+  "name": "snapflip",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+
+  // Owner: C. Create with `wrangler d1 create snapflip` and paste the id here.
+  "d1_databases": [
+    { "binding": "DB", "database_name": "snapflip", "database_id": "REPLACE_WITH_D1_ID" }
+  ],
+  // `wrangler r2 bucket create snapflip-photos`
+  "r2_buckets": [{ "binding": "PHOTOS", "bucket_name": "snapflip-photos" }],
+  // `wrangler queues create snapflip-match`
+  "queues": {
+    "producers": [{ "binding": "MATCH_QUEUE", "queue": "snapflip-match" }],
+    "consumers": [{ "queue": "snapflip-match", "max_batch_size": 10, "max_batch_timeout": 1 }]
+  },
+
+  "durable_objects": {
+    "bindings": [
+      { "name": "AUCTION", "class_name": "AuctionDO" },
+      { "name": "BUYER", "class_name": "BuyerAgent" },
+      { "name": "MCP_OBJECT", "class_name": "SnapflipMCP" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["AuctionDO", "BuyerAgent", "SnapflipMCP"] }
+  ],
+
+  // Non-secret config. Secrets: see .dev.vars.example (local) / `wrangler secret put` (deployed).
+  "vars": {
+    "ENVIRONMENT": "production",
+    "PUBLIC_URL": "https://snapflip.workers.dev",
+    "CLAUDE_MODEL": "claude-sonnet-4-5",
+    "SELLER_FEE_BPS": "1000"
+  }
+}
