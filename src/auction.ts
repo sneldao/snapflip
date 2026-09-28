@@ -303,6 +303,7 @@ export class AuctionDO extends DurableObject<Env> {
       priceCents: s.priceCents,
       reserveCents: s.reserveCents,
       endsAt: s.endsAt,
+      closing: s.closing === true,
       active: s.bidders.filter((b) => b.active).map((b) => ({ orderId: b.orderId, label: b.label })),
       dropped: s.bidders
         .filter((b) => !b.active)

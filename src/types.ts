@@ -134,6 +134,8 @@ export interface AuctionView {
   priceCents: number;
   reserveCents: number;
   endsAt: number; // epoch ms
+  /** True during the soft-close "going once" window: price holds, dropped agents may raise back in. */
+  closing?: boolean;
   active: { orderId: string; label: string }[];
   dropped: { orderId: string; label: string; atCents: number; reason: string }[];
   winner?: { orderId: string; label: string; priceCents: number };
