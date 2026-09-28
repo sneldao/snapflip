@@ -1,8 +1,10 @@
 // Owner: B. Standing orders and the aggregated order book.
 import { Hono } from "hono";
 import { z } from "zod";
+import { claudeJson } from "./lib/claude";
+import { CONDITION_FLAGS, knownFlags } from "./lib/flags";
 import { newId, requireApiKey, type App } from "./lib/util";
-import type { Env, Order, OrderRules } from "./types";
+import type { Env, Grade, Order, OrderRules } from "./types";
 
 export const CreateOrderInput = z.object({
   buyerId: z.string().min(1),
@@ -12,15 +14,89 @@ export const CreateOrderInput = z.object({
 });
 export type CreateOrderInput = z.infer<typeof CreateOrderInput>;
 
-/** TODO(B): replace with a Claude call that returns OrderRules from rulesText + SKU catalog. */
-async function parseRules(env: Env, input: CreateOrderInput): Promise<OrderRules> {
+const GRADES: Grade[] = ["A", "B", "C", "D"];
+
+type CatalogRow = { id: string; title: string; platform: string | null; region: string | null };
+
+/** Raw, untrusted shape from Claude — validated and clamped in code before use. */
+interface RawRules {
+  skuIds?: string[];
+  gradeCaps?: Record<string, number>;
+  reject?: string[];
+  require?: string[];
+}
+
+/** Deterministic fallback: substring match on title. Used with no API key or if Claude fails. */
+function fallbackRules(input: CreateOrderInput, catalog: CatalogRow[]): OrderRules {
   let skuIds = input.skuIds ?? [];
   if (skuIds.length === 0) {
-    const { results } = await env.DB.prepare("SELECT id, title FROM skus").all<{ id: string; title: string }>();
     const text = input.rulesText.toLowerCase();
-    skuIds = results.filter((s) => text.includes(s.title.toLowerCase().replace(/ version$/, ""))).map((s) => s.id);
+    skuIds = catalog.filter((s) => text.includes(s.title.toLowerCase().replace(/ version$/, ""))).map((s) => s.id);
   }
   return { skuIds, maxCents: input.maxCents, gradeCaps: {}, require: [], reject: ["reproduction"] };
+}
+
+/**
+ * Turn a collector's plain-English order into structured rules. Claude picks the SKUs and
+ * condition-sensitive pricing; code enforces every money cap, the SKU catalog, and the flag
+ * vocabulary so a bad model response can never over-spend or match the wrong item.
+ */
+async function parseRules(env: Env, input: CreateOrderInput): Promise<OrderRules> {
+  const { results: catalog } = await env.DB.prepare("SELECT id, title, platform, region FROM skus").all<CatalogRow>();
+  const known = new Set(catalog.map((s) => s.id));
+
+  if (!env.ANTHROPIC_API_KEY) return fallbackRules(input, catalog);
+
+  let raw: RawRules;
+  try {
+    raw = await claudeJson<RawRules>(env, {
+      maxTokens: 500,
+      system: `You convert a collector's plain-English buy order into structured JSON rules for retro video game cartridges.
+
+Catalog (id | title | platform | region):
+${catalog.map((s) => `${s.id} | ${s.title} | ${s.platform ?? ""} | ${s.region ?? ""}`).join("\n")}
+
+The buyer's overall maximum is ${input.maxCents} cents. Never return a price above that.
+All prices are integer cents.
+
+Shape:
+{
+  "skuIds": string[],   // every catalog id this order could match; [] if none fit
+  "gradeCaps": { "A"?: cents, "B"?: cents, "C"?: cents, "D"?: cents },  // most the buyer pays at each grade; omit a grade to use the overall max; 0 means REJECT that grade
+  "reject": string[],   // condition flags that disqualify the item
+  "require": string[]   // condition flags that MUST be present (rare — usually [])
+}
+
+Grades: A=near mint, B=light wear, C=heavy wear/label damage, D=damaged or incomplete.
+The ONLY condition flags you may use: ${CONDITION_FLAGS.join(", ")}.
+Mapping guidance:
+- "authentic" / "genuine" / "no bootleg or repro" -> reject ["reproduction"]
+- "no water damage" -> reject ["water_damage"]
+- "mint" / "near mint only" -> gradeCaps {"B":0,"C":0,"D":0}
+- "B or better" -> gradeCaps {"C":0,"D":0}
+- "up to $45, $30 if the label is worn" -> gradeCaps {"C": 3000} and overall max 4500
+- "any Gen 1 Pokemon" -> include every matching catalog id.`,
+      content: [{ type: "text", text: input.rulesText }],
+    });
+  } catch (e) {
+    console.error("rule parse failed, using fallback:", (e as Error).message);
+    return fallbackRules(input, catalog);
+  }
+
+  const skuIds = (input.skuIds?.length ? input.skuIds : (raw.skuIds ?? [])).filter((id) => known.has(id));
+
+  const gradeCaps: Partial<Record<Grade, number>> = {};
+  for (const g of GRADES) {
+    const v = raw.gradeCaps?.[g];
+    // Clamp each grade cap into [0, maxCents]; the model never sets the ceiling.
+    if (typeof v === "number" && Number.isFinite(v)) gradeCaps[g] = Math.min(Math.max(0, Math.round(v)), input.maxCents);
+  }
+
+  const reject = knownFlags(raw.reject);
+  if (!reject.includes("reproduction")) reject.push("reproduction"); // repros always disqualified in this category
+  const require = knownFlags(raw.require);
+
+  return { skuIds, maxCents: input.maxCents, gradeCaps, require, reject };
 }
 
 export async function createOrder(env: Env, input: CreateOrderInput): Promise<Order> {

@@ -1,5 +1,6 @@
 // Owner: A. Claude vision: identify the exact SKU and grade condition from a photo.
 import { claudeJson } from "./lib/claude";
+import { CONDITION_FLAGS } from "./lib/flags";
 import type { Env, GradeReport, Identification, Sku } from "./types";
 
 type MediaType = "image/jpeg" | "image/png" | "image/webp";
@@ -51,7 +52,7 @@ export async function grade(env: Env, photo: ArrayBuffer, title: string, mediaTy
   return claudeJson<GradeReport>(env, {
     system: `You grade the condition of a "${title}" cartridge from a photo.
 Grades: A = near mint, B = light wear, C = heavy wear/label damage, D = damaged or incomplete.
-Flags (only if visible): reproduction, water_damage, label_wear, label_torn, sticker, missing_label, corrosion.
+Flags (only if visible): ${CONDITION_FLAGS.join(", ")}.
 Shape: {"grade": "A"|"B"|"C"|"D", "notes": string (one sentence), "flags": string[]}`,
     content: [image(photo, mediaType), { type: "text", text: "Grade this item." }],
   });
