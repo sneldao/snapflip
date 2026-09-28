@@ -2,7 +2,7 @@
 import { Hono } from "hono";
 import { html, raw } from "hono/html";
 import QRCode from "qrcode";
-import { layout } from "./layout";
+import { layout, soonRail } from "./layout";
 import type { App } from "../lib/util";
 
 export const landing = new Hono<App>();
@@ -291,7 +291,7 @@ landing.get("/", async (c) => {
         </div>
       </div>
       <p><a class="button" href="/buy">Set a standing order</a></p>
-      <p class="foot muted">next on the rack: vinyl · lego · trading cards — anything with an exact identity is fair game.</p>
+      ${soonRail}
       <p class="foot muted">built at the startup speedrun — anthropic claude · cloudflare workers/d1/r2/do · stripe connect · brainbase</p>
       ${tapeScript}
       ${statsScript}`,
@@ -327,6 +327,7 @@ landing.get("/qr", async (c) => {
       .url { font-family: "Orbitron", monospace; font-weight: 600; font-size: 1.6rem; letter-spacing: 0.08em; margin-top: 16px; color: #46ff8f; text-shadow: 0 0 18px rgba(70, 255, 143, 0.35); }
       .stats { font-family: "VT323", monospace; font-size: 1.9rem; color: #7fa08a; margin-top: 12px; }
       .stats span { color: #46ff8f; }
+      .soon { font-family: "VT323", monospace; font-size: 1.4rem; color: #1e7a46; letter-spacing: 0.16em; margin-top: 16px; text-transform: uppercase; }
       .coin { font-family: "VT323", monospace; font-size: 2.2rem; color: #ffb000; margin-top: 20px;
               letter-spacing: 0.12em; text-shadow: 0 0 14px rgba(255, 176, 0, 0.6); animation: blink 1.1s steps(1) infinite; }
       @media (prefers-reduced-motion: reduce) { .mark .cursor, .coin { animation: none; } }
@@ -339,6 +340,7 @@ landing.get("/qr", async (c) => {
     <div class="url">${buyUrl}</div>
     <div class="coin">&#9656; INSERT COIN TO CONTINUE &#9666;</div>
     <div class="stats"><span id="demand">$0</span> standing demand &middot; <span id="collectors">0</span> collectors &middot; <span id="tx">0</span> real transactions</div>
+    <div class="soon">next on the rack — vinyl &middot; lego &middot; trading cards</div>
     ${statsScript}
   </body>
 </html>`);

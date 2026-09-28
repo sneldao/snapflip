@@ -1,19 +1,27 @@
-# Demo video (2:30 target, 3:00 hard max)
+# Demo video (2:00 target)
 
-The story: **two humans, several agents, one real transaction, under 60 seconds, one take.**
+The story: **two humans, several agents, one real transaction, under 60 seconds — told backwards.** Open on the impossible result, rewind, replay it in real time.
 
 ## Script
 
 | Time | Shot | Line / content |
 |---|---|---|
-| 0:00–0:08 | Phone-shot cold open: hand pulls a cartridge from a bin, snaps it | "This is $6. Before I pay for it, I want to know it's already sold." |
-| 0:08–0:25 | Team on camera, 4 faces | Problem in one breath: resellers buy blind, collectors refresh marketplaces all day. "SnapFlip lets buyer agents bid on your find while it's still on the rack." |
-| 0:25–0:40 | Buyer side: a real attendee on camera tells Claude their order | "Pokémon Yellow, authentic label, up to $45." Show the MCP tool call and the payment-limit confirmation. |
-| 0:40–1:35 | **Main shot, one continuous take, speedrun timer on screen.** Split screen: seller phone and live `/a/{id}` page | Snap → "Matched 5 orders" → reserve $10 → price climbs, agents drop out with reasons ("grade B, capped at $32") → cleared at $38 → seller taps "Bought it" |
-| 1:35–1:55 | Buyer's phone buzzes, cut to their face | "Your agent won Pokémon Yellow for $38." Stripe Dashboard: live payment captured. |
-| 1:55–2:10 | Landing page | "Built today: N collectors, $X in standing demand, Y real transactions." Real numbers only. |
-| 2:10–2:25 | Team on camera | Honesty: what's real (live payments, real buyers, Claude grading) and what's next (shipping labels, transfer-on-delivery, sneakers with authentication). |
-| 2:25–2:30 | Logo + URL | |
+| 0:00–0:06 | **Inverted cold open.** Black → Telegram ding → phone at the thrift rack showing `SOLD — $38` | "This cart isn't listed anywhere. Nobody negotiated. It just sold — and I haven't paid for it yet." |
+| 0:06–0:10 | **Rewind beat.** Speedrun timer snaps back to 0:00 over the same footage | "Here's what happened in the last 60 seconds." |
+| 0:10–0:20 | Bin-digging b-roll, fast cuts (~3s each) | Problem in one breath: resellers buy blind; collectors know exactly what they'd pay but refresh marketplaces all day. |
+| 0:20–0:35 | Buyer side: real attendee tells Claude their order | "Pokémon Yellow, up to $45, B grade or better." → MCP tool call → `/buy/done` receipt (the mandate is the prop). |
+| 0:35–1:25 | **The money shot.** Split screen: rack photo left, `/a/{id}` fullscreen right, timer overlay running | Snap → identified + graded → agents join → price climbs, agents drop *with visible reasons* → cleared at $38 → seller taps "I bought it". |
+| 1:25–1:40 | Winner's phone buzzes; **show their face reacting** | "Their agent won at $38 — they'd capped it at $45." Then Stripe dashboard, live capture visible. |
+| 1:40–1:52 | Landing page `/`, stats counting up live | "Every number on this screen is real — N collectors, $X standing demand, Y transactions — today, at this event." |
+| 1:52–2:00 | `> snapflip▊` wordmark + `go.snapflip.workers.dev` + **the QR on the final frame** | "Sold before you buy it." Judges can scan the buy page while they deliberate. |
+
+## Engagement devices
+
+- **Captions on everything** — most judges watch muted. Big, high-contrast, karaoke-timed.
+- **Diegetic sound:** real thrift-store ambience, shutter click at SNAP, a tick per price step synced to the music's beat, register ca-ching at SOLD. All added in the edit; the app doesn't need to make noise.
+- **One sentence of VO per shot.** If a line needs two breaths, it's two shots.
+- **The timer is the honesty device:** it keeps running through every jump cut — "we cut the boring parts" becomes a flex, not a fib.
+- **The receipt is the agentic-money prop.** `/buy/done` prints a till receipt with a barcode — the buyer literally holding a printed mandate.
 
 ## Rules
 
@@ -22,12 +30,20 @@ The story: **two humans, several agents, one real transaction, under 60 seconds,
 - **No slides, no architecture diagram.** The stack goes in the Devpost write-up.
 - **Numbers on screen must be real,** pulled from the live `/api/orderbook`.
 
+## Risk management
+
+- Record the **backup take the moment the loop works**, not on filming day.
+- If live Stripe flakes on the day: the `/buy/done` receipt + Telegram win ping carry the "real money" claim without a dashboard shot.
+- Hero buyer briefed, Telegram linked, card already through `/buy/setup` — **no form-filling on camera**.
+- The SOLD-notification frame needed for the cold open is easiest shot *first*: screen-cap the bot message, film it on the rack.
+
 ## Prep checklist
 
 - [ ] 3–5 cartridges that identify reliably (tested 5× each)
 - [ ] At least 5 standing orders matching the hero item, with different grade caps so dropouts are staggered and readable
 - [ ] Hero buyer briefed, with their Telegram linked and a payment limit set
 - [ ] Phone mirrored with QuickTime; screen recorded at 1080p; lapel mic or quiet room
+- [ ] Captions + sound design pass scheduled in the edit (ticks synced to music)
 - [ ] **Backup take recorded as soon as the loop works (+120 min)**
 - [ ] Test-mode deployment ready in case live mode breaks
 

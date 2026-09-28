@@ -127,6 +127,11 @@ export const layout = (title: string, body: Body, opts: LayoutOpts = {}) => html
       .depth .bar { flex: 1; height: 10px; background: rgba(70, 255, 143, 0.08); border: 1px solid var(--line); border-radius: 2px; overflow: hidden; }
       .depth .bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--phos-dim), var(--phos)); box-shadow: 0 0 8px rgba(70, 255, 143, 0.4); }
       .depth .n { flex: 0 0 auto; color: var(--muted); font-size: 0.85rem; }
+      /* Category pipeline rail — visible product roadmap, clearly not live. */
+      .soon-rail { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; margin: 22px 0 0; padding: 9px 12px; border: 1px dashed var(--line); border-radius: 6px; }
+      .soon-tag { font-family: var(--font-display); font-weight: 600; font-size: 0.62rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--phos-dim); }
+      .soon-item { font-size: 0.8rem; color: var(--muted); padding: 3px 11px; border: 1px solid var(--line); border-radius: 999px; }
+      .soon-item b { color: var(--phos-dim); font-weight: 400; margin-right: 6px; }
       /* CRT overlay for the live-auction screen. */
       body.crt::before {
         content: ""; position: fixed; inset: 0; z-index: 9998; pointer-events: none;
@@ -153,3 +158,12 @@ export const layout = (title: string, body: Body, opts: LayoutOpts = {}) => html
     </main>
   </body>
 </html>`;
+
+/** Category pipeline teaser — exact-identity collectibles beyond games. */
+export const soonRail = html`<div class="soon-rail">
+  <span class="soon-tag">next on the rack</span>
+  <span class="soon-item"><b>&#9673;</b> vinyl</span>
+  <span class="soon-item"><b>&#9638;</b> lego</span>
+  <span class="soon-item"><b>&#10022;</b> trading cards</span>
+  <span class="soon-item">exact identity required</span>
+</div>`;

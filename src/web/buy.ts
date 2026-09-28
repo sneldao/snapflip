@@ -8,7 +8,7 @@ import { newId, requireApiKey, usd, type App } from "../lib/util";
 import { cancelOrder, createOrder, listOrders } from "../orders";
 // Grade caps from the optional form fields are folded into the rules text the LLM parser reads.
 import type { Env, Grade } from "../types";
-import { layout } from "./layout";
+import { layout, soonRail } from "./layout";
 
 export const buy = new Hono<App>();
 
@@ -57,6 +57,7 @@ const buyForm = (catalog: string[], error?: string, v: FormValues = {}) => html`
     <p class="muted">You never pay more than your max. If your agent wins, you pay the price the auction stopped at, which is often less. If a winner's payment fails, the next agent in line buys at the same clearing price.</p>
     <p><button type="submit">Save card and set order</button></p>
   </form>
+  ${soonRail}
   <script>
     document.getElementById("chips").addEventListener("click", (e) => {
       const chip = e.target.closest(".chip");
@@ -231,6 +232,7 @@ buy.get("/buy/done", async (c) => {
           : html`<p class="muted">Buyer id: ${buyerId}</p>`}
         ${ordersCard}
         ${own ? html`<p class="muted"><a href="/buy/orders">View and manage your standing orders &rarr;</a></p>` : null}
+        ${soonRail}
         ${connectorUrl
           ? html`<div class="card">
               <h2>Let Claude manage your orders</h2>
