@@ -6,7 +6,7 @@ Four people in parallel. **Hard stop 3:30 PM PT. Final video take recorded by 2:
 
 **Live:** https://go.snapflip.workers.dev (worker `go`; D1 `snapflip`, R2 `snapflip-photos`, Queue `snapflip-match` all provisioned; remote schema applied, demo seed is local-only). Pre-commit hook (gitleaks + eslint + tsc) is enforced — keep the tree green or it blocks your commit.
 
-**Blocking everyone:** prod secrets aren't set yet (`wrangler secret put`: `API_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `ANTHROPIC_API_KEY`). The next deploy fails closed on every route except `/health` until they land — that's intentional.
+**Blocking everyone:** 3/6 prod secrets set (`API_KEY`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET` — bot is @snapflipbot, webhook already pointed at prod). Still needed via `wrangler secret put`: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `ANTHROPIC_API_KEY`. The next deploy fails closed on every route except `/health` until they land — that's intentional.
 
 - **A — Seller:** Telegram webhook + photo→R2→identify→grade→reserve→auction flow wired; `/a/{id}` live page and `/a/{id}/photo` image streaming done. Open: raise-max button (calls B's `/api/orders/:id/raise`), low-confidence SKU picker, vision prompt tuning (needs `ANTHROPIC_API_KEY`, currently stubs).
 - **B — Engine:** Done pending live test — Claude rule parsing with code-enforced caps, deterministic valuation + Claude veto, soft-close + raise-your-max, fallback bidders now pay the same clearing price. Verified locally with seeded orders: 4-agent auction, staggered dropouts, correct winner/price.
