@@ -186,8 +186,10 @@ async function readSnap(env: Env, chatId: number, fileId: string, mediaType: Ima
     .run();
 
   // Confident: grade and go straight to the reserve prompt.
+  // The model's collector remark opens every outcome: acknowledge what they found before anything else.
+  const remark = id.remark ? `\n<i>${esc(id.remark)}</i>` : "";
   if (id.skuId && id.confidence >= CONFIDENCE_THRESHOLD) {
-    return finalizeIdentification(env, chatId, snapId, id.skuId, id.title, statusId);
+    return finalizeIdentification(env, chatId, snapId, id.skuId, id.title, statusId, id.remark);
   }
 
   // Low confidence: let the seller pick from the top matches instead of guessing wrong.
@@ -197,7 +199,7 @@ async function readSnap(env: Env, chatId: number, fileId: string, mediaType: Ima
       env,
       chatId,
       statusId,
-      `Not sure which one this is${id.title ? ` — closest guess <b>${esc(id.title)}</b>` : ""}. Tap the match:`,
+      `${id.title ? `Looks like <b>${esc(id.title)}</b>…${remark}\n\nBut I want to be sure before agents bid.` : "Not sure which one this is."} Tap the match:`,
       options.map((o) => [{ text: o.title, callback_data: `pick:${snapId}:${o.skuId}` }]),
     );
     return;
@@ -209,7 +211,7 @@ async function readSnap(env: Env, chatId: number, fileId: string, mediaType: Ima
       env,
       chatId,
       statusId,
-      `Spotted <b>${esc(id.title)}</b>.\nIt's not in the SnapFlip catalog yet, so no agents are hunting it.\n▸ Leave it on the rack — or snap the next cart.`,
+      `Nice find — <b>${esc(id.title)}</b>.${remark}\n\nNo agents are hunting this one on SnapFlip yet, so there's no buyer waiting today.\n▸ Snap the next cart — or see what collectors are hunting.`,
       demand,
     );
     return;
@@ -218,14 +220,15 @@ async function readSnap(env: Env, chatId: number, fileId: string, mediaType: Ima
     env,
     chatId,
     statusId,
-    `Couldn't make out the label${id.title ? ` — looks like <b>${esc(id.title)}</b>, but I'm not sure` : ""}.\n▸ Try again with the label flat, well lit and filling the frame.`,
+    `${id.title ? `I think that's <b>${esc(id.title)}</b>, but the label's hard to read.` : "I can't quite make out the label."}${remark}\n▸ One more try? Label flat, well lit, filling the frame.`,
     demand,
   );
 }
 
 /** Grade the (now-known) item, save it against the snap, and prompt the seller for a reserve.
  *  Edits the status message in place so the photo flow is one message. */
-async function finalizeIdentification(env: Env, chatId: number, snapId: string, skuId: string, title: string, statusMsgId?: number): Promise<void> {
+async function finalizeIdentification(env: Env, chatId: number, snapId: string, skuId: string, title: string, statusMsgId?: number, remark?: string): Promise<void> {
+  const aside = remark ? `\n<i>${esc(remark)}</i>` : "";
   const row = await env.DB.prepare("SELECT seller_id, r2_key FROM snaps WHERE id = ?").bind(snapId).first<{ seller_id: string; r2_key: string }>();
   if (!row) {
     await edit(env, chatId, statusMsgId, "That photo expired — snap it again.");
@@ -236,7 +239,7 @@ async function finalizeIdentification(env: Env, chatId: number, snapId: string, 
     await edit(env, chatId, statusMsgId, "Lost the photo — snap it again.");
     return;
   }
-  await edit(env, chatId, statusMsgId, `&gt; grading <b>${esc(title)}</b>…`);
+  await edit(env, chatId, statusMsgId, `<b>${esc(title)}</b>${aside}\n\n&gt; grading condition…`);
   await typing(env, chatId);
   const ct = obj.httpMetadata?.contentType ?? "image/jpeg";
   const g = await grade(env, await obj.arrayBuffer(), title, (VISION_TYPES.includes(ct) ? ct : "image/jpeg") as ImageType);
@@ -254,7 +257,7 @@ async function finalizeIdentification(env: Env, chatId: number, snapId: string, 
     env,
     chatId,
     statusMsgId,
-    `<b>${esc(title)}</b> · grade ${g.grade}\n${esc(g.notes)}\n\n` +
+    `<b>${esc(title)}</b> · grade ${g.grade}${aside}\n${esc(g.notes)}\n\n` +
       (eligible
         ? `<b>${eligible} buyer agent${eligible === 1 ? "" : "s"}</b> ready to bid.\n▸ Reply with a floor price (e.g. <code>10</code>) to open a 60s auction.`
         : `No standing orders for this one yet.\n▸ Leave it on the rack — or <a href="${esc(env.PUBLIC_URL)}/">see what's in demand</a>.`),

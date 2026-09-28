@@ -19,27 +19,32 @@ function image(photo: ArrayBuffer, mediaType: MediaType) {
   };
 }
 
-export async function identify(env: Env, photo: ArrayBuffer, mediaType: MediaType = "image/jpeg"): Promise<Identification> {
+/** `remark`: one friendly collector-style line about the item, shown to the seller for rapport. */
+export type Identified = Identification & { remark?: string };
+
+export async function identify(env: Env, photo: ArrayBuffer, mediaType: MediaType = "image/jpeg"): Promise<Identified> {
   const { results } = await env.DB.prepare("SELECT id, title, platform, region FROM skus").all<Pick<Sku, "id" | "title" | "platform" | "region">>();
 
   if (!llmAvailable(env)) {
     // Stub so the flow works without a key. Remove once the prompt is tuned.
-    return { skuId: "gb-pokemon-yellow-us", title: "Pokemon Yellow Version", confidence: 0.99, alternatives: [] };
+    return { skuId: "gb-pokemon-yellow-us", title: "Pokemon Yellow Version", confidence: 0.99, alternatives: [], remark: "The Pikachu-follows-you edition — a Game Boy classic." };
   }
 
   // TODO(A): tune on real cartridge photos until 5/5 correct.
-  const out = await claudeJson<Identification>(env, {
+  const out = await claudeJson<Identified>(env, {
     system: `You identify retro video game cartridges from photos.
 Pick the matching SKU from this catalog (id | title | platform | region):
 ${results.map((s) => `${s.id} | ${s.title} | ${s.platform ?? ""} | ${s.region ?? ""}`).join("\n")}
-If none match, use skuId null and describe the item in title.
-Shape: {"skuId": string|null, "title": string, "confidence": number 0..1, "alternatives": [{"skuId","title","confidence"}] (up to 3)}`,
+If none match, use skuId null and put the item's full name, platform and region (if visible) in title — confidence is how sure you are of that name.
+"remark": one short, warm sentence a knowledgeable collector friend would say about this exact item — something widely known about the game, or something visible on this copy (label, shell, wear). Never mention prices, value, rarity or investment. If unsure of a fact, comment on what you can see instead. Max 120 characters.
+Shape: {"skuId": string|null, "title": string, "confidence": number 0..1, "alternatives": [{"skuId","title","confidence"}] (up to 3), "remark": string}`,
     content: [image(photo, mediaType), { type: "text", text: "Identify this item." }],
   });
   // Never trust an id that isn't in the catalog.
   const known = new Set(results.map((s) => s.id));
   if (out.skuId && !known.has(out.skuId)) out.skuId = null;
   out.alternatives = (out.alternatives ?? []).filter((a) => known.has(a.skuId));
+  out.remark = typeof out.remark === "string" ? out.remark.trim().slice(0, 160) : undefined;
   return out;
 }
 
