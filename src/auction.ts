@@ -30,6 +30,9 @@ interface State {
   incrementCents: number;
   endsAt: number;
   extensions: number;
+  /** True during a "going once, going twice" grace window: one bidder stands, the price holds,
+   *  and a just-dropped agent can still raise back in. */
+  closing?: boolean;
   bidders: Bidder[];
   events: BidEvent[];
   winner?: { orderId: string; buyerId: string; priceCents: number };
@@ -103,10 +106,25 @@ export class AuctionDO extends DurableObject<Env> {
       return;
     }
 
+    // Soft-close grace: one bidder stands, price holds, dropped agents may raise back in.
+    if (s.closing) {
+      if (active.length >= 2) {
+        // A raise made it competitive again — resume the clock.
+        s.closing = false;
+        await this.save(s);
+        this.broadcast(s);
+        await this.ctx.storage.setAlarm(now + TICK_MS);
+        return;
+      }
+      if (now >= s.endsAt) return this.finish(s, active[0] ?? highest(s.bidders), s.priceCents);
+      await this.ctx.storage.setAlarm(Math.min(s.endsAt, now + TICK_MS));
+      return;
+    }
+
     const next = s.priceCents + s.incrementCents;
     const stay = active.filter((b) => b.dropoutCents >= next);
 
-    // Everyone left at once: highest value (earliest order on ties) wins at the current price.
+    // Everyone caps out at once: highest value (earliest order on ties) wins at the current price.
     if (stay.length === 0) return this.finish(s, highest(active), s.priceCents);
 
     for (const b of active) {
@@ -114,7 +132,7 @@ export class AuctionDO extends DurableObject<Env> {
       b.active = false;
       b.droppedAtCents = next;
       s.events.push({ orderId: b.orderId, event: "drop", priceCents: next, reason: b.reason, at: nowIso() });
-      // Buyer can raise their max (soft close). Fire and forget.
+      // Ping the buyer so they can raise their max. Fire and forget.
       this.ctx.waitUntil(
         notify(this.env, { buyerId: b.buyerId }, {
           type: "agent_dropped", auctionId: s.id, orderId: b.orderId, title: s.title, atCents: next, reason: b.reason,
@@ -123,7 +141,9 @@ export class AuctionDO extends DurableObject<Env> {
     }
     s.priceCents = next;
 
-    if (stay.length === 1) return this.finish(s, stay[0], next);
+    // One bidder left standing: open a soft-close window instead of finishing, so a just-dropped
+    // agent has a chance to raise back in. Finishes now if no extensions remain.
+    if (stay.length === 1) return this.enterClosingOrFinish(s, now, stay[0], next);
     if (now >= s.endsAt) return this.finish(s, highest(stay), next);
 
     await this.save(s);
@@ -131,22 +151,52 @@ export class AuctionDO extends DurableObject<Env> {
     await this.ctx.storage.setAlarm(now + TICK_MS);
   }
 
-  /** Buyer raised their max after dropping (called via BuyerAgent, which checks ownership). */
-  async raise(orderId: string, newMaxCents: number): Promise<AuctionView> {
+  private async enterClosingOrFinish(s: State, now: number, standing: Bidder, priceCents: number): Promise<void> {
+    s.priceCents = priceCents;
+    // No grace left, or nobody to bring back: settle now.
+    if (s.extensions >= MAX_EXTENSIONS || !s.bidders.some((b) => !b.active)) {
+      return this.finish(s, standing, priceCents);
+    }
+    s.closing = true;
+    s.extensions++;
+    s.endsAt = now + EXTEND_MS;
+    await this.save(s);
+    this.broadcast(s);
+    await this.ctx.storage.setAlarm(s.endsAt);
+  }
+
+  /**
+   * Buyer raised their max. `authorizedMaxCents` has already been checked against the buyer's
+   * payment limit by BuyerAgent, so here it becomes the bidder's new ceiling and dropout.
+   */
+  async raise(orderId: string, authorizedMaxCents: number): Promise<AuctionView> {
     const s = await this.load();
     if (!s || s.status !== "live") throw new Error("auction not live");
     const b = s.bidders.find((x) => x.orderId === orderId);
     if (!b) throw new Error("order not in this auction");
-    b.dropoutCents = Math.min(Math.max(b.dropoutCents, newMaxCents), b.limitCents);
-    if (!b.active && b.dropoutCents >= s.priceCents + s.incrementCents) {
+
+    b.limitCents = Math.max(b.limitCents, authorizedMaxCents);
+    b.dropoutCents = Math.max(b.dropoutCents, authorizedMaxCents);
+    // Rejoin if the new max covers the current price (during a soft close) or the next tick.
+    const threshold = s.closing ? s.priceCents : s.priceCents + s.incrementCents;
+    if (!b.active && b.dropoutCents >= threshold) {
       b.active = true;
       b.droppedAtCents = undefined;
-      if (s.extensions < MAX_EXTENSIONS && s.endsAt - Date.now() < EXTEND_MS) {
-        s.endsAt += EXTEND_MS;
-        s.extensions++;
-      }
     }
+    b.reason = `raised to $${Math.round(b.dropoutCents / 100)}`;
     s.events.push({ orderId, event: "raise", priceCents: b.dropoutCents, at: nowIso() });
+
+    // If a soft close is now competitive again, resume the clock immediately with fresh runway.
+    const now = Date.now();
+    if (s.closing && s.bidders.filter((x) => x.active).length >= 2) {
+      s.closing = false;
+      s.endsAt = now + EXTEND_MS;
+      await this.save(s);
+      this.broadcast(s);
+      await this.ctx.storage.setAlarm(now + TICK_MS);
+      return this.view(s);
+    }
+
     await this.save(s);
     this.broadcast(s);
     return this.view(s);

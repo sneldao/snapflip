@@ -1,6 +1,7 @@
 // Owner: B. Standing orders and the aggregated order book.
 import { Hono } from "hono";
 import { z } from "zod";
+import { buyerAgent } from "./buyer";
 import { claudeJson } from "./lib/claude";
 import { CONDITION_FLAGS, knownFlags } from "./lib/flags";
 import { newId, requireApiKey, type App } from "./lib/util";
@@ -175,4 +176,23 @@ orders.get("/api/orders", requireApiKey, async (c) => {
 orders.post("/api/orders/:id/cancel", requireApiKey, async (c) => {
   const { buyerId } = await c.req.json<{ buyerId: string }>();
   return c.json({ cancelled: await cancelOrder(c.env, buyerId, c.req.param("id")) });
+});
+
+const RaiseInput = z.object({
+  buyerId: z.string().min(1),
+  auctionId: z.string().min(1),
+  maxCents: z.number().int().positive().max(100_000),
+});
+
+// Raise an order's max mid-auction (Telegram "raise your max", MCP, or concierge).
+orders.post("/api/orders/:id/raise", requireApiKey, async (c) => {
+  const parsed = RaiseInput.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: parsed.error.issues }, 400);
+  const { buyerId, auctionId, maxCents } = parsed.data;
+  try {
+    const view = await buyerAgent(c.env, buyerId).raise(buyerId, auctionId, c.req.param("id"), maxCents);
+    return c.json(view);
+  } catch (e) {
+    return c.json({ error: (e as Error).message }, 400);
+  }
 });
