@@ -34,7 +34,7 @@ type FormValues = { name?: string; email?: string; rules?: string; max?: string;
 const buyForm = (catalog: string[], error?: string, v: FormValues = {}) => html`
   <p class="muted" style="font-family: var(--font-display); font-size: 0.72rem; letter-spacing: 0.22em; text-transform: uppercase">Step 1 of 3 &middot; standing order &rarr; card &rarr; agent live</p>
   <h1>What are you hunting for?</h1>
-  <p class="muted">Your agent bids for you in live auctions, never above your max. Retro games today — vinyl, LEGO and trading cards are on the rack next.</p>
+  <p class="muted">Your agent bids for you in live auctions, never above your max.</p>
   ${error ? html`<div class="err">${error}</div>` : null}
   <div class="err" id="form-error" hidden></div>
   <form method="post" action="/buy" class="card" id="order-form">
@@ -47,14 +47,16 @@ const buyForm = (catalog: string[], error?: string, v: FormValues = {}) => html`
       ${catalog.map((t) => html`<button type="button" class="chip">${t}</button>`)}
     </div>
     <label for="max">Max price (USD)</label><input id="max" name="max" type="number" min="1" max="1000" step="1" required value="${v.max ?? ""}" />
-    <h2 style="margin-top: 22px">Grade caps &middot; optional</h2>
-    <p class="muted">Bid less for rougher cartridges: cap what your agent pays at each grade. 0 means your agent never buys that grade.</p>
-    <div class="row">
-      <div style="flex: 1; min-width: 130px"><label for="capB">Max at grade B (USD)</label><input id="capB" name="capB" type="number" min="0" max="1000" step="1" value="${v.capB ?? ""}" /></div>
-      <div style="flex: 1; min-width: 130px"><label for="capC">Max at grade C (USD)</label><input id="capC" name="capC" type="number" min="0" max="1000" step="1" value="${v.capC ?? ""}" /></div>
-      <div style="flex: 1; min-width: 130px"><label for="capD">Max at grade D (USD)</label><input id="capD" name="capD" type="number" min="0" max="1000" step="1" value="${v.capD ?? ""}" /></div>
-    </div>
-    <p class="muted">You never pay more than your max. If your agent wins, you pay the price the auction stopped at, which is often less. If a winner's payment fails, the next agent in line buys at the same clearing price.</p>
+    <details style="margin-top: 20px">
+      <summary style="cursor: pointer; font-family: var(--font-display); font-weight: 600; font-size: 0.72rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted)">Grade caps &middot; optional</summary>
+      <p class="muted">Bid less for rougher cartridges: cap what your agent pays at each grade. 0 means your agent never buys that grade.</p>
+      <div class="row">
+        <div style="flex: 1; min-width: 130px"><label for="capB">Max at grade B (USD)</label><input id="capB" name="capB" type="number" min="0" max="1000" step="1" value="${v.capB ?? ""}" /></div>
+        <div style="flex: 1; min-width: 130px"><label for="capC">Max at grade C (USD)</label><input id="capC" name="capC" type="number" min="0" max="1000" step="1" value="${v.capC ?? ""}" /></div>
+        <div style="flex: 1; min-width: 130px"><label for="capD">Max at grade D (USD)</label><input id="capD" name="capD" type="number" min="0" max="1000" step="1" value="${v.capD ?? ""}" /></div>
+      </div>
+    </details>
+    <p class="muted">You pay the clearing price — never your max, usually less.</p>
     <p><button type="submit">Save card and set order</button></p>
   </form>
   ${soonRail}
