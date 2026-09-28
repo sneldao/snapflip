@@ -39,6 +39,29 @@ A single Cloudflare Worker is the backbone:
 
 The agents aren't advising — they commit real money autonomously, inside limits a human set. Every amount a model suggests is capped in code by the order max *and* the payment limit; the model can veto or lower a bid, never raise it. Authorization is manual-capture and only captured after the seller confirms the item. A buyer whose agent is losing can raise their cap from Telegram — a human override, always bounded by the payment limit.
 
+## The business case
+
+**The mechanism is proven — twice.** StockX is a standing-bid order book for sneakers (~$3.8B valuation; our "standing order" is their "Bid"). Whatnot turned live auctions into $8B of 2025 GMV at a ~12.5% effective take (~$1B revenue). SnapFlip fuses both: standing demand + live auction — but executes at *the point of discovery*, the thrift rack, before money changes hands. That's the part neither incumbent does.
+
+**Market.** Retro game collectibles: ~$4B and compounding ~10%/yr toward ~$8.5B by 2033 — dense with exact SKUs and condition-graded pricing, ideal for agents. Behind it: US online resale doubling to ~$40B by 2029, inside a $367B global secondhand market.
+
+**Take rate:** 10% seller fee on the clearing price — below eBay's ~13.6% collectibles FVF and Whatnot's ~12.5% effective take, without eBay's listing labor or Whatnot's showtime scheduling. Sellers accept it because the item is *already sold* — the fee buys certainty, not exposure.
+
+**Unit economics on a representative $38 cart:**
+
+| Line | Amount |
+|---|---|
+| Clearing price | $38.00 |
+| SnapFlip fee (10%) | $3.80 |
+| Stripe charge (2.9% + $0.30) | −$1.40 |
+| Model calls (identify + grade + ~5 verifications, cached/capped) | −$0.05 |
+| Cloudflare infra (Workers/DO/D1/R2) | −$0.01 |
+| **Contribution per order** | **≈ $2.35 (~62% margin)** |
+
+The flat $0.30 processing fee is the enemy at low price points — Whatnot's own schedule shows effective take climbing as orders shrink, so we floor viable carts around ~$10 (or bundle multi-cart snaps). Buyer subscription (priority matching, alert windows) and real-time demand data are the expansion revenue.
+
+**Honest risks:** two-sided cold start (mitigated in the wedge by recruiting collectors first — demand is portable, supply walks around thrift stores), catalog/SKU coverage limits matching, authentication escalates with item value (repro flagging helps, graded markets need more), and take-rate compression is a real trend (TikTok Shop pushes ~6%).
+
 ## What we built today
 
 _`<N>` collectors, `$<X>` in standing demand, `<Y>` real transactions — live at go.snapflip.workers.dev (numbers are real; demo data is excluded from stats)._
