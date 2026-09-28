@@ -1,0 +1,15 @@
+# brainbase.agent.yaml — declarative agent manifest.
+# Committed to source control. Edit by hand, then `brainbase agent push`.
+
+schema: 1
+harness: claude-code
+agent:
+  name: snapflip-concierge
+  tagline: Set a standing buy order; your agent bids in live cartridge auctions.
+instructions:
+  file: ./instructions.md
+playbooks: []
+skills: []
+mcp: []
+evals: []
+id: b3ff7b7f-ce06-4023-99ed-c6e275b4ed63

@@ -8,3 +8,6 @@ dist/
 .env.*
 *.log
 .DS_Store
+
+# Brainbase agent credentials
+.brainbase/
