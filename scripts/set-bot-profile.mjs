@@ -33,7 +33,7 @@ allOk =
   })) && allOk;
 allOk =
   (await call("setMyShortDescription", {
-    short_description: "Sold before you buy it. Snap a cartridge, agents bid in 60s.",
+    short_description: "Sold before you buy it. Snap a retro game, agents bid in 60s.",
   })) && allOk;
 allOk =
   (await call("setMyDescription", {

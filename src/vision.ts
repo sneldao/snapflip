@@ -19,25 +19,31 @@ function image(photo: ArrayBuffer, mediaType: MediaType) {
   };
 }
 
+/** Categories we recognise. Only retro games trade today; the rest are on the roadmap ("next on the rack"). */
+export const CATEGORIES = ["retro-game", "vinyl", "lego", "trading-card", "other"] as const;
+export type Category = (typeof CATEGORIES)[number];
+
 /** `remark`: one friendly collector-style line about the item, shown to the seller for rapport. */
-export type Identified = Identification & { remark?: string };
+export type Identified = Identification & { remark?: string; category: Category };
 
 export async function identify(env: Env, photo: ArrayBuffer, mediaType: MediaType = "image/jpeg"): Promise<Identified> {
   const { results } = await env.DB.prepare("SELECT id, title, platform, region FROM skus").all<Pick<Sku, "id" | "title" | "platform" | "region">>();
 
   if (!llmAvailable(env)) {
     // Stub so the flow works without a key. Remove once the prompt is tuned.
-    return { skuId: "gb-pokemon-yellow-us", title: "Pokemon Yellow Version", confidence: 0.99, alternatives: [], remark: "The Pikachu-follows-you edition — a Game Boy classic." };
+    return { skuId: "gb-pokemon-yellow-us", title: "Pokemon Yellow Version", confidence: 0.99, alternatives: [], remark: "The Pikachu-follows-you edition — a Game Boy classic.", category: "retro-game" };
   }
 
   // TODO(A): tune on real cartridge photos until 5/5 correct.
   const out = await claudeJson<Identified>(env, {
-    system: `You identify retro video game cartridges from photos.
+    system: `You identify items photographed at thrift stores for a retro video game marketplace.
+"category": "retro-game" for any video game (cartridge, disc or boxed); "vinyl" for records; "lego" for LEGO sets or bricks; "trading-card" for Pokémon/Magic/sports cards etc.; "other" for anything else.
+For non-games, skuId is null and title is a short plain description of the item (e.g. "Levi's denim jacket").
 Pick the matching SKU from this catalog (id | title | platform | region):
 ${results.map((s) => `${s.id} | ${s.title} | ${s.platform ?? ""} | ${s.region ?? ""}`).join("\n")}
 If none match, use skuId null and put the item's full name, platform and region (if visible) in title — confidence is how sure you are of that name.
 "remark": one short, warm sentence a knowledgeable collector friend would say about this exact item — something widely known about the game, or something visible on this copy (label, shell, wear). Never mention prices, value, rarity or investment. If unsure of a fact, comment on what you can see instead. Max 120 characters.
-Shape: {"skuId": string|null, "title": string, "confidence": number 0..1, "alternatives": [{"skuId","title","confidence"}] (up to 3), "remark": string}`,
+Shape: {"category": string, "skuId": string|null, "title": string, "confidence": number 0..1, "alternatives": [{"skuId","title","confidence"}] (up to 3), "remark": string}`,
     content: [image(photo, mediaType), { type: "text", text: "Identify this item." }],
   });
   // Never trust an id that isn't in the catalog.
@@ -45,6 +51,8 @@ Shape: {"skuId": string|null, "title": string, "confidence": number 0..1, "alter
   if (out.skuId && !known.has(out.skuId)) out.skuId = null;
   out.alternatives = (out.alternatives ?? []).filter((a) => known.has(a.skuId));
   out.remark = typeof out.remark === "string" ? out.remark.trim().slice(0, 160) : undefined;
+  // A catalog match is a game by definition; otherwise only accept a category we know.
+  out.category = out.skuId ? "retro-game" : (CATEGORIES as readonly string[]).includes(out.category) ? out.category : "retro-game";
   return out;
 }
 

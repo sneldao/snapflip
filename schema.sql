@@ -143,3 +143,12 @@ CREATE TABLE IF NOT EXISTS watches (
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 CREATE INDEX IF NOT EXISTS idx_watches_open ON watches(active, notified_at);
+
+-- Sellers who snapped a roadmap category (vinyl, lego, trading-card) and asked to hear when it opens.
+-- Doubles as the signal for which category to launch next.
+CREATE TABLE IF NOT EXISTS category_interest (
+  seller_id TEXT NOT NULL REFERENCES sellers(id),
+  category TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  PRIMARY KEY (seller_id, category)
+);

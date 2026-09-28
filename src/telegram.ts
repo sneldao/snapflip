@@ -5,7 +5,7 @@ import { buyerAgent } from "./buyer";
 import { findCandidates } from "./match";
 import { capture, expressEligible, release, releaseExpress } from "./payments";
 import { expressFeeBps, sellerFeeBps, splitExpress, splitFee } from "./lib/fees";
-import { grade, identify } from "./vision";
+import { grade, identify, type Category } from "./vision";
 import { newId, safeEqual, usd, type App } from "./lib/util";
 import { nearbyDemand, offerWatch, ordinal, snapsToday } from "./watches";
 import type { Env, Identification, NotifyEvent, NotifyTarget, Snap } from "./types";
@@ -179,7 +179,7 @@ async function noBuyerExtras(env: Env, sellerId: string, snapId: string, skuId: 
     line,
     buttons: [
       [{ text: "Ping me if someone hunts it", callback_data: `watch:${watchId}` }],
-      [{ text: "What's in demand", url: `${env.PUBLIC_URL}/` }],
+      [{ text: "What's in demand", url: `${env.PUBLIC_URL}/#book` }],
     ],
   };
 }
@@ -209,9 +209,25 @@ async function readSnap(env: Env, chatId: number, fileId: string, mediaType: Ima
     .bind(snapId, sellerId, r2Key, id.confidence)
     .run();
 
-  // Confident: grade and go straight to the reserve prompt.
   // The model's collector remark opens every outcome: acknowledge what they found before anything else.
   const remark = id.remark ? `\n<i>${esc(id.remark)}</i>` : "";
+
+  // Not a game: be straight about scope instead of implying a buyer might appear.
+  if (id.category !== "retro-game") {
+    const soon = ROADMAP[id.category];
+    await edit(
+      env,
+      chatId,
+      statusId,
+      `${soon ? "Nice find" : "That looks like"} — <b>${esc(id.title)}</b>.${remark}\n\n` +
+        (soon ? `SnapFlip trades retro games today — ${soon} is next on the rack.` : "SnapFlip only handles retro games right now.") +
+        `\n▸ Snap a Game Boy, N64 or SNES game to see who wants it.`,
+      soon ? [[{ text: `Tell me when ${soon} opens`, callback_data: `interest:${id.category}` }]] : undefined,
+    );
+    return;
+  }
+
+  // Confident: grade and go straight to the reserve prompt.
   if (id.skuId && id.confidence >= CONFIDENCE_THRESHOLD) {
     return finalizeIdentification(env, chatId, snapId, id.skuId, id.title, statusId, id.remark);
   }
@@ -229,14 +245,14 @@ async function readSnap(env: Env, chatId: number, fileId: string, mediaType: Ima
     return;
   }
   // A confident read of an item we don't list is a catalog gap, not a bad photo — say what we saw.
-  const demand: Buttons = [[{ text: "What's in demand", url: `${env.PUBLIC_URL}/` }]];
+  const demand: Buttons = [[{ text: "What's in demand", url: `${env.PUBLIC_URL}/#book` }]];
   if (id.title && id.confidence >= CONFIDENCE_THRESHOLD) {
     const extras = await noBuyerExtras(env, sellerId, snapId, id.skuId ?? null, id.title);
     await edit(
       env,
       chatId,
       statusId,
-      `Nice find — <b>${esc(id.title)}</b>.${remark}\n\nNo agents are hunting this one yet.${extras.line}\n▸ Snap the next cart, or tap below and I'll ping you if a collector starts looking.`,
+      `Nice find — <b>${esc(id.title)}</b>.${remark}\n\nNo agents are hunting this one yet.${extras.line}\n▸ Snap the next game, or tap below and I'll ping you if a collector starts looking.`,
       extras.buttons,
     );
     return;
@@ -284,7 +300,7 @@ async function finalizeIdentification(env: Env, chatId: number, snapId: string, 
     tail = `<b>${eligible} buyer agent${eligible === 1 ? "" : "s"}</b> ready to bid.\n▸ Reply with a floor price (e.g. <code>10</code>) to open a 60s auction.`;
   } else {
     const extras = await noBuyerExtras(env, row.seller_id, snapId, skuId, title);
-    tail = `No standing orders for this one yet.${extras.line}\n▸ Snap the next cart, or tap below and I'll ping you if a collector starts looking.`;
+    tail = `No standing orders for this one yet.${extras.line}\n▸ Snap the next game, or tap below and I'll ping you if a collector starts looking.`;
     buttons = extras.buttons;
   }
   await edit(env, chatId, statusMsgId, `<b>${esc(title)}</b> · grade ${g.grade}${aside}\n${esc(g.notes)}\n\n${tail}`, buttons);
@@ -319,6 +335,9 @@ async function handleReserve(env: Env, msg: TgMessage, dollars: number): Promise
       .bind(String(msg.chat.id), liveId, auctionId).run();
   }
 }
+
+/** Roadmap categories and how the bot names them ("vinyl is next on the rack"). */
+const ROADMAP: Partial<Record<Category, string>> = { vinyl: "vinyl", lego: "LEGO", "trading-card": "trading cards" };
 
 const payoutsButton = (env: Env, sellerId: string) => [{ text: "Set up payouts (2 min)", url: `${env.PUBLIC_URL}/sell/onboard?seller=${sellerId}` }];
 
@@ -388,6 +407,7 @@ async function handleUpdate(env: Env, u: TgUpdate): Promise<void> {
       raise: "Raising your max…",
       pick: "Got it — grading…",
       watch: "Watching — I'll ping you",
+      interest: "Noted — I'll tell you when it opens",
     };
     await tg(env, "answerCallbackQuery", { callback_query_id: u.callback_query.id, text: toasts[action] });
     let stripped = false;
@@ -428,6 +448,16 @@ async function handleUpdate(env: Env, u: TgUpdate): Promise<void> {
         const [, snapId, skuId] = parts;
         const sku = await env.DB.prepare("SELECT title FROM skus WHERE id = ?").bind(skuId).first<{ title: string }>();
         if (chatId && sku) await finalizeIdentification(env, chatId, snapId, skuId, sku.title, cbMsg?.message_id);
+      } else if (action === "interest") {
+        // Seller wants a roadmap category (vinyl, LEGO, trading cards): record it once, drop the button.
+        const category = parts[1];
+        const seller = chatId ? await env.DB.prepare("SELECT id FROM sellers WHERE tg_chat_id = ?").bind(String(chatId)).first<{ id: string }>() : null;
+        if (seller && category in ROADMAP) {
+          await env.DB.prepare("INSERT OR IGNORE INTO category_interest (seller_id, category) VALUES (?, ?)").bind(seller.id, category).run();
+        }
+        if (cbMsg) {
+          await tg(env, "editMessageReplyMarkup", { chat_id: cbMsg.chat.id, message_id: cbMsg.message_id, reply_markup: { inline_keyboard: [] } }).catch(() => {});
+        }
       } else if (action === "watch") {
         // Seller armed a "ping me" watch; swap the keyboard for just the demand link.
         await env.DB.prepare("UPDATE watches SET active = 1 WHERE id = ?").bind(parts[1]).run();
@@ -435,7 +465,7 @@ async function handleUpdate(env: Env, u: TgUpdate): Promise<void> {
           await tg(env, "editMessageReplyMarkup", {
             chat_id: cbMsg.chat.id,
             message_id: cbMsg.message_id,
-            reply_markup: { inline_keyboard: [[{ text: "What's in demand", url: `${env.PUBLIC_URL}/` }]] },
+            reply_markup: { inline_keyboard: [[{ text: "What's in demand", url: `${env.PUBLIC_URL}/#book` }]] },
           }).catch(() => {});
         }
       }
@@ -492,11 +522,12 @@ async function handleUpdate(env: Env, u: TgUpdate): Promise<void> {
       env,
       msg.chat.id,
       `<b>&gt; snapflip▊</b>\nSold before you buy it.\n\n` +
-        `Snap a cartridge you're eyeing on the rack. I'll identify it, grade it, and run a 60-second auction ` +
+        `Snap a retro game you're eyeing on the rack. I'll identify it, grade it, and run a 60-second auction ` +
         `against buyer agents holding real money, before you pay for it.\n\n` +
-        `▸ Send a photo, label facing the camera\n▸ Set a floor price\n▸ Watch it climb, then decide`,
+        `▸ Send a photo, label facing the camera\n▸ Set a floor price\n▸ Watch it climb, then decide\n\n` +
+        `<i>Retro games today. Vinyl, LEGO and trading cards are next on the rack.</i>`,
       [
-        [{ text: "What's in demand", url: `${env.PUBLIC_URL}/` }],
+        [{ text: "What's in demand", url: `${env.PUBLIC_URL}/#book` }],
         [{ text: "I collect — set a standing order", url: `${env.PUBLIC_URL}/buy` }],
       ],
     );
@@ -504,7 +535,7 @@ async function handleUpdate(env: Env, u: TgUpdate): Promise<void> {
   }
   const price = text.match(/^\$?(\d{1,4}(?:\.\d{1,2})?)$/);
   if (price) return handleReserve(env, msg, Number(price[1]));
-  await send(env, msg.chat.id, "Send me a photo of a cartridge to see who wants it.\n▸ Or /help for how it works.");
+  await send(env, msg.chat.id, "Send me a photo of a retro game — Game Boy, N64, SNES — to see who wants it.\n▸ Or /help for how it works.");
 }
 
 export const telegram = new Hono<App>();
