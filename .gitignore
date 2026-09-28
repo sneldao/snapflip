@@ -9,5 +9,8 @@ dist/
 *.log
 .DS_Store
 
+# Local video projects (own repo/config, not lintable here)
+videos/
+
 # Brainbase agent credentials
 .brainbase/
