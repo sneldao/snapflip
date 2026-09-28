@@ -1,9 +1,11 @@
 // Owner: B. Find standing orders that match a snap and compute each agent's private dropout price.
+import { claudeJson } from "./lib/claude";
 import type { Env, Grade, MatchJob, OrderRules, Snap, Valuation } from "./types";
 
 /**
- * Pure, deterministic valuation from structured rules. Claude can add nuance on top
- * (TODO(B): Claude verifies "same SKU?" and explains), but money caps are always enforced here.
+ * Pure, deterministic valuation from structured rules — the source of truth for money and
+ * eligibility. verifyOne() layers Claude's judgement on top (veto + plain-English reason),
+ * but the dropout computed here is the hard ceiling that caps whatever the model returns.
  */
 export function valueForOrder(
   input: { orderId: string; buyerId: string; rules: OrderRules; maxCents: number; buyerLimitCents: number },
@@ -31,10 +33,49 @@ export function valueForOrder(
   return { orderId, buyerId, eligible: dropoutCents > 0, dropoutCents, limitCents, reason };
 }
 
+/**
+ * Claude double-checks a code-eligible match and explains the walk-away price in plain English.
+ * It can only VETO the match or LOWER the price — the code-computed dropout is the hard ceiling,
+ * so a bad model response can never over-spend. Falls back to the deterministic result on failure.
+ */
+interface Verdict {
+  eligible: boolean;
+  dropoutCents?: number;
+  reason?: string;
+}
+
+async function verifyOne(env: Env, snap: Snap, det: Valuation, rulesText: string): Promise<Valuation> {
+  try {
+    const v = await claudeJson<Verdict>(env, {
+      maxTokens: 300,
+      system: `You are a collector's purchasing agent. Decide whether a specific second-hand item matches your buyer's standing order and what it is worth to them.
+
+Buyer's order (plain English): "${rulesText}"
+
+The item the seller is holding:
+- title: ${snap.title}
+- condition grade: ${snap.grade} (A = near mint, B = light wear, C = heavy wear/label damage, D = damaged or incomplete)
+- grader's notes: ${snap.gradeNotes || "none"}
+- condition flags: ${snap.flags.length ? snap.flags.join(", ") : "none"}
+
+Your code has already set the HARD maximum this buyer will pay for THIS item at ${det.dropoutCents} cents. You may lower it if the condition warrants, but never exceed it.
+
+Return {"eligible": boolean, "dropoutCents": integer (<= ${det.dropoutCents}), "reason": one short sentence the buyer will read}.`,
+      content: [{ type: "text", text: "Does this item match the order, and what is your walk-away price?" }],
+    });
+    const dropoutCents = Math.max(0, Math.min(det.dropoutCents, Math.round(v.dropoutCents ?? det.dropoutCents)));
+    const eligible = det.eligible && v.eligible !== false && dropoutCents > 0;
+    return { ...det, eligible, dropoutCents, reason: v.reason?.trim().slice(0, 140) || det.reason };
+  } catch (e) {
+    console.error("match verify failed, using deterministic:", (e as Error).message);
+    return det;
+  }
+}
+
 export async function findCandidates(env: Env, snap: Snap): Promise<Valuation[]> {
   if (!snap.skuId) return [];
   const { results } = await env.DB.prepare(
-    `SELECT o.id, o.buyer_id, o.rules_json, o.max_cents, b.limit_cents
+    `SELECT o.id, o.buyer_id, o.rules_json, o.rules_text, o.max_cents, b.limit_cents
        FROM order_skus os
        JOIN orders o ON o.id = os.order_id
        JOIN buyers b ON b.id = o.buyer_id
@@ -43,13 +84,20 @@ export async function findCandidates(env: Env, snap: Snap): Promise<Valuation[]>
       ORDER BY o.created_at`,
   )
     .bind(snap.skuId)
-    .all<{ id: string; buyer_id: string; rules_json: string; max_cents: number; limit_cents: number }>();
+    .all<{ id: string; buyer_id: string; rules_json: string; rules_text: string; max_cents: number; limit_cents: number }>();
 
-  return results.map((r) =>
-    valueForOrder(
+  const deterministic = results.map((r) => ({
+    val: valueForOrder(
       { orderId: r.id, buyerId: r.buyer_id, rules: JSON.parse(r.rules_json), maxCents: r.max_cents, buyerLimitCents: r.limit_cents },
       snap,
     ),
+    rulesText: r.rules_text,
+  }));
+
+  // Deterministic result is the source of truth for money. Claude only refines eligible matches.
+  if (!env.ANTHROPIC_API_KEY) return deterministic.map((d) => d.val);
+  return Promise.all(
+    deterministic.map((d) => (d.val.eligible ? verifyOne(env, snap, d.val, d.rulesText) : Promise.resolve(d.val))),
   );
 }
 
