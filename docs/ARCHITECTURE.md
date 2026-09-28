@@ -69,9 +69,10 @@ At auction time, for each candidate order, Claude receives the photo, the grade 
 | `src/match.ts` | Candidate lookup (D1) and Claude verification and valuation for each order |
 | `src/auction.ts` | `AuctionDO`: state machine, alarm clock, WebSocket fan-out, writes result to D1 |
 | `src/buyer.ts` | `BuyerAgent` (Agents SDK): orders, payment reference, notifications, raise-max handling |
-| `src/payments.ts` | Stripe: setup, off-session PaymentIntent (manual capture), capture, transfer, Connect onboarding |
+| `src/payments.ts` | Stripe: setup, off-session PaymentIntent (manual capture), capture, transfer, Connect onboarding, refund, void-stale-auth sweep (cron) |
 | `src/telegram.ts` | Seller and buyer bot messages, inline buttons, live auction message edits |
-| `src/mcp.ts` | Remote MCP server (`McpAgent`): buyer tools |
+| `src/mcp.ts` | Remote MCP server (`McpAgent`): buyer tools, authenticated per buyer by token |
+| `src/lib/tokens.ts` | Per-buyer bearer tokens (`sf_…`): shown once, stored as SHA-256 (`buyers.token_hash`) |
 | `web/` | Landing page with live order book depth, `/a/{id}` live auction page, `/buy` onboarding |
 
 ## Endpoints
@@ -79,32 +80,34 @@ At auction time, for each candidate order, Claude receives the photo, the grade 
 | Method | Path | Purpose |
 |---|---|---|
 | POST | `/telegram/webhook` | Seller photos, reserve input, confirm/ship buttons; buyer raise-max replies |
-| POST | `/api/orders` | Create standing order (used by web, Brainbase concierge, MCP) |
+| POST | `/api/orders` | Create standing order (API key; used by Brainbase concierge) |
+| POST | `/api/orders/{id}/raise` | Raise an order's max mid-auction (capped at payment limit) |
+| POST | `/api/buyers` | Concierge onboarding: creates buyer + token, returns `mcpUrl`, `setupUrl`, `telegramUrl` |
 | GET | `/api/orderbook` | Aggregated demand per SKU (landing page and seller "what's hot") |
 | GET | `/a/{id}` | Public live auction page |
 | GET | `/a/{id}/ws` | WebSocket to `AuctionDO` |
 | POST | `/api/auctions/{id}/confirm` | Seller bought the item (photo) → capture payment |
 | POST | `/api/auctions/{id}/shipped` | Tracking number → buyer notified |
 | POST | `/api/auctions/{id}/delivered` | Release funds → Transfer to seller |
-| GET | `/buy/setup` | Stripe Checkout (setup mode) or SPT grant → payment limit |
+| POST | `/api/auctions/{id}/cancel` | Void the authorization (frees the hold, reopens the order) |
+| POST | `/api/auctions/{id}/refund` | Dispute: refund a captured payment (pre-transfer only) |
+| GET | `/buy/setup` | Stripe Checkout (setup mode) → saved card + code-enforced limit |
 | GET | `/sell/onboard` | Stripe Connect Express onboarding link |
-| POST | `/webhooks/stripe` | `setup_intent.succeeded`, `payment_intent.*`, `account.updated`, `transfer.*` |
-| — | `/mcp` | MCP tools: `create_standing_order`, `list_my_orders`, `cancel_order`, `get_auction`, `orderbook` |
+| POST | `/webhooks/stripe` | `checkout.session.completed`, `setup_intent.succeeded`, `payment_intent.*`, `account.updated` |
+| — | `/mcp` | MCP tools: `catalog`, `my_account`, `orderbook`, `create_standing_order`, `list_my_orders`, `cancel_order`, `get_auction` |
 
 ## Payments flow
 
-1. **Payment limit (buyer onboarding).** Preferred: a Shared Payment Token scoped to SnapFlip with an amount cap and expiry. Fallback: Checkout in `setup` mode saves a PaymentMethod on a Customer, and our code enforces the cap and expiry. Store `limit_cents` and `expires_at` either way.
+1. **Payment limit (buyer onboarding).** For the demo: Checkout in `setup` mode saves a PaymentMethod on a Customer; `limit_cents` and `limit_expires_at` are set at signup and enforced in code. A Shared Payment Token scoped to SnapFlip remains the preferred production path — the slot for it is marked `TODO(C)` in `settleAuction`, pending whether SPTs support `capture_method=manual`.
 2. **Auction cleared.** Create a PaymentIntent for the clearing price with `capture_method=manual`, `off_session=true`, `confirm=true` and `transfer_group=auction_{id}`. This authorizes without charging. If the authorization fails, the next-highest agent wins at its own dropout price.
-3. **Seller confirms purchase** (photo of the item in hand) → `capture`. If the seller doesn't confirm within 2h, cancel the PaymentIntent and lower the seller's reliability score.
+3. **Seller confirms purchase** (photo of the item in hand) → `capture`. If the seller doesn't confirm within 2h, a 5-minute cron (`voidExpiredAuths`) cancels the PaymentIntent, reopens the winning order, and lowers the seller's reliability score.
 4. **Delivered** → `Transfer` of clearing price minus 10% fee minus label cost to the seller's Connect account, same `transfer_group`.
 5. **Dispute or not as described** → refund from the platform balance before any transfer. Holding funds until delivery is why we use separate charges and transfers rather than destination charges.
-
-**Needs checking:** whether PaymentIntents created from SPTs support `capture_method=manual`. If they don't, use the saved-card fallback for the demo.
 
 ## Data (D1)
 
 ```sql
-buyers   (id, name, tg_chat_id, email, stripe_customer_id, payment_method_id, spt_id, limit_cents, limit_expires_at, created_at)
+buyers   (id, name, tg_chat_id, email, token_hash, stripe_customer_id, payment_method_id, spt_id, limit_cents, limit_expires_at, created_at)
 sellers  (id, tg_chat_id, stripe_account_id, payouts_enabled, reliability, created_at)
 skus     (id, category, title, platform, region, variant, aliases_json, ref_price_cents, image_url)
 orders   (id, buyer_id, rules_text, rules_json, max_cents, status, expires_at, created_at)
@@ -125,6 +128,6 @@ Photos go in R2 (`snaps/{id}.jpg`). Live auction state lives in `AuctionDO` stor
 
 ## Secrets (`wrangler secret put`, never commit)
 
-`TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `ANTHROPIC_API_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `BRAINBASE_LABS_API_KEY`, `PRICECHARTING_API_KEY` (optional reference prices; otherwise Claude web search).
+`API_KEY`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `ANTHROPIC_API_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `BRAINBASE_LABS_API_KEY`, `PRICECHARTING_API_KEY` (optional reference prices; otherwise Claude web search). `TELEGRAM_BOT_USERNAME` is a plain var, not a secret.
 
-Endpoints that change state check a shared secret (Telegram header, Stripe signature, API key for Brainbase and MCP). No unauthenticated writes.
+Endpoints that change state check a shared secret (Telegram header, Stripe signature, API key for Brainbase/admin endpoints). MCP is authenticated per buyer: `Authorization: Bearer sf_…` or `?token=` (Claude.ai custom connectors only take a URL); the token resolves to a `buyerId` server-side — clients can't pass one. No unauthenticated writes.
