@@ -77,7 +77,8 @@ const tapeScript = html`<script>
       var s = document.createElement("span");
       d.append(t, s);
       reel.appendChild(d);
-      if (reduce) { s.textContent = txt; return 0; }
+      var fast = document.body.classList.contains("turbo");
+      if (reduce || fast) { s.textContent = txt; return 0; }
       var i = 0;
       return (function type() {
         s.textContent = txt.slice(0, ++i) + (i < txt.length ? "█" : "");
@@ -90,7 +91,7 @@ const tapeScript = html`<script>
       (function next() {
         if (document.hidden) { timer = setTimeout(next, 500); return; }
         var dur = line(TAPE[i].tag, TAPE[i].cls, TAPE[i].txt);
-        if (++i < TAPE.length) { timer = setTimeout(next, dur + 900); }
+        if (++i < TAPE.length) { timer = setTimeout(next, dur + (document.body.classList.contains("turbo") ? 220 : 900)); }
         else {
           if (btn) btn.hidden = false;
           timer = setTimeout(play, 4000); // hold the SOLD frame, then loop
@@ -98,6 +99,23 @@ const tapeScript = html`<script>
       })();
     }
     if (btn) btn.addEventListener("click", function () { clearTimeout(timer); btn.hidden = true; play(); });
+    // Konami code → turbo mode: instant tape, glow boost, badge. Judges who find it will talk about it.
+    var seq = ["ArrowUp", "ArrowUp", "ArrowDown", "ArrowDown", "ArrowLeft", "ArrowRight", "ArrowLeft", "ArrowRight", "b", "a"];
+    var ki = 0;
+    document.addEventListener("keydown", function (e) {
+      ki = e.key === seq[ki] ? ki + 1 : e.key === seq[0] ? 1 : 0;
+      if (ki !== seq.length) return;
+      ki = 0;
+      document.body.classList.add("turbo");
+      if (!document.querySelector(".turbo-badge")) {
+        var b = document.createElement("div");
+        b.className = "turbo-badge";
+        b.textContent = "TURBO MODE ▸▸";
+        document.body.appendChild(b);
+      }
+      clearTimeout(timer);
+      play();
+    });
     play();
   })();
 </script>`;
@@ -217,6 +235,18 @@ landing.get("/", async (c) => {
         .step strong { font-family: var(--font-display); font-size: 0.8rem; letter-spacing: 0.12em;
           text-transform: uppercase; display: block; margin-bottom: 2px; }
         .foot { margin-top: 28px; font-size: 0.8rem; }
+        /* Thrift price tag around the demand figure. */
+        .tag { display: inline-block; background: #f0e2a8; border-radius: 4px; padding: 2px 18px 6px 34px;
+          transform: rotate(-2deg); position: relative; box-shadow: 2px 3px 0 rgba(0, 0, 0, 0.4); }
+        .tag::before { content: ""; position: absolute; left: 11px; top: 50%; margin-top: -6px;
+          width: 11px; height: 11px; border-radius: 50%; background: #070a08;
+          box-shadow: inset 0 0 0 3px #c8b877; }
+        .tag .big { color: #1c1a14; text-shadow: none; font-size: 3.8rem; }
+        .turbo-badge { position: fixed; right: 14px; bottom: 12px; z-index: 40; font-family: var(--font-display);
+          font-size: 0.8rem; letter-spacing: 0.2em; color: var(--amber); text-shadow: 0 0 12px rgba(255, 176, 0, 0.8);
+          animation: pulse 0.9s ease-in-out infinite; }
+        body.turbo .reel { text-shadow: 0 0 12px rgba(70, 255, 143, 0.55); }
+        @media (prefers-reduced-motion: reduce) { .turbo-badge { animation: none; } }
       </style>
       <p class="eyebrow">SnapFlip — agentic resale · live order book</p>
       <h1>Sold before you buy it.</h1>
@@ -226,11 +256,11 @@ landing.get("/", async (c) => {
         <div class="reel" id="reel"></div>
         <button id="replay" type="button" hidden>▸ replay</button>
       </div>
-      <p><a class="button" href="/buy">Set a standing order</a></p>
+      <p><a class="button" href="/buy">Start hunting — set a standing order</a></p>
       <div class="card">
         <h2>Live right now</h2>
         <div class="row">
-          <div><div class="big" id="demand">$0</div><div class="muted">standing demand</div></div>
+          <div><div class="tag"><div class="big" id="demand">$0</div></div><div class="muted">standing demand</div></div>
           <div><div class="big" id="collectors">0</div><div class="muted">collectors</div></div>
           <div><div class="big" id="tx">0</div><div class="muted">real transactions</div></div>
         </div>
@@ -261,6 +291,7 @@ landing.get("/", async (c) => {
         </div>
       </div>
       <p><a class="button" href="/buy">Set a standing order</a></p>
+      <p class="foot muted">next on the rack: vinyl · lego · trading cards — anything with an exact identity is fair game.</p>
       <p class="foot muted">built at the startup speedrun — anthropic claude · cloudflare workers/d1/r2/do · stripe connect · brainbase</p>
       ${tapeScript}
       ${statsScript}`,
@@ -296,7 +327,9 @@ landing.get("/qr", async (c) => {
       .url { font-family: "Orbitron", monospace; font-weight: 600; font-size: 1.6rem; letter-spacing: 0.08em; margin-top: 16px; color: #46ff8f; text-shadow: 0 0 18px rgba(70, 255, 143, 0.35); }
       .stats { font-family: "VT323", monospace; font-size: 1.9rem; color: #7fa08a; margin-top: 12px; }
       .stats span { color: #46ff8f; }
-      @media (prefers-reduced-motion: reduce) { .mark .cursor { animation: none; } }
+      .coin { font-family: "VT323", monospace; font-size: 2.2rem; color: #ffb000; margin-top: 20px;
+              letter-spacing: 0.12em; text-shadow: 0 0 14px rgba(255, 176, 0, 0.6); animation: blink 1.1s steps(1) infinite; }
+      @media (prefers-reduced-motion: reduce) { .mark .cursor, .coin { animation: none; } }
     </style>
   </head>
   <body>
@@ -304,6 +337,7 @@ landing.get("/qr", async (c) => {
     <h1>Tell an agent what you're hunting. It bids for you.</h1>
     <div class="qr">${raw(qr)}</div>
     <div class="url">${buyUrl}</div>
+    <div class="coin">&#9656; INSERT COIN TO CONTINUE &#9666;</div>
     <div class="stats"><span id="demand">$0</span> standing demand &middot; <span id="collectors">0</span> collectors &middot; <span id="tx">0</span> real transactions</div>
     ${statsScript}
   </body>

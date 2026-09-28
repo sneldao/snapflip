@@ -43,7 +43,7 @@ The agents aren't advising — they commit real money autonomously, inside limit
 
 **The mechanism is proven — twice.** StockX is a standing-bid order book for sneakers (~$3.8B valuation; our "standing order" is their "Bid"). Whatnot turned live auctions into $8B of 2025 GMV at a ~12.5% effective take (~$1B revenue). SnapFlip fuses both: standing demand + live auction — but executes at *the point of discovery*, the thrift rack, before money changes hands. That's the part neither incumbent does.
 
-**Market.** Retro game collectibles: ~$4B and compounding ~10%/yr toward ~$8.5B by 2033 — dense with exact SKUs and condition-graded pricing, ideal for agents. Behind it: US online resale doubling to ~$40B by 2029, inside a $367B global secondhand market.
+**Market.** Retro game collectibles: ~$4B and compounding ~10%/yr toward ~$8.5B by 2033 — dense with exact SKUs and condition-graded pricing, ideal for agents. The wedge generalizes to anything with a canonical identity — vinyl pressings, LEGO set numbers, TCG cards are catalog rows, not rebuilds. Behind it: US online resale doubling to ~$40B by 2029, inside a $367B global secondhand market.
 
 **Take rate:** 10% seller fee on the clearing price — below eBay's ~13.6% collectibles FVF and Whatnot's ~12.5% effective take, without eBay's listing labor or Whatnot's showtime scheduling. Sellers accept it because the item is *already sold* — the fee buys certainty, not exposure.
 
@@ -80,7 +80,7 @@ _`<N>` collectors, `$<X>` in standing demand, `<Y>` real transactions — live a
 
 ## What's next
 
-Transfer-on-delivery with tracking, Shared Payment Tokens for buyer limits, and new wedges — vinyl, LEGO, sneakers once authentication exists.
+More exact-identity collectibles (vinyl pressings, LEGO sets, TCG — a catalog migration, not a rebuild), transfer-on-delivery with tracking, Shared Payment Tokens for buyer limits, sneakers once authentication exists.
 
 ## Built with
 

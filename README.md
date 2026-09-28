@@ -33,7 +33,7 @@ A 10% seller fee on the clearing price, against roughly 13% on eBay and 20% on P
 
 ## Wedge
 
-**Retro video games.** Every item has an exact SKU, collectors already keep wishlists, games turn up all the time at thrift stores, and counterfeit risk is manageable. Next: vinyl, LEGO, sneakers (once authentication exists).
+**Physical collectibles with an exact identity** — retro video games first. Every item has a canonical SKU, collectors already keep wishlists, carts turn up constantly at thrift stores, and counterfeit risk is manageable (the model flags reproductions, code disqualifies them). The engine is category-agnostic: the catalog is a table, so vinyl records (exact pressings), LEGO (set numbers) and TCG (card + set) are a data migration, not a rebuild. Sneakers later, once authentication exists.
 
 ## Stack
 

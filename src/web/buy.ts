@@ -34,7 +34,7 @@ type FormValues = { name?: string; email?: string; rules?: string; max?: string;
 const buyForm = (catalog: string[], error?: string, v: FormValues = {}) => html`
   <p class="muted" style="font-family: var(--font-display); font-size: 0.72rem; letter-spacing: 0.22em; text-transform: uppercase">Step 1 of 3 &middot; standing order &rarr; card &rarr; agent live</p>
   <h1>What are you hunting for?</h1>
-  <p class="muted">Your agent bids for you in live auctions, never above your max.</p>
+  <p class="muted">Your agent bids for you in live auctions, never above your max. Retro games today — vinyl, LEGO and trading cards are on the rack next.</p>
   ${error ? html`<div class="err">${error}</div>` : null}
   <div class="err" id="form-error" hidden></div>
   <form method="post" action="/buy" class="card" id="order-form">
@@ -146,6 +146,34 @@ buy.post("/buy", async (c) => {
   return c.redirect(`/buy/setup?buyer=${buyerId}`);
 });
 
+// Thrift-store till receipt: paper card, torn edges, barcode keyed to the order id.
+const receiptStyle = html`<style>
+  .receipt { background: #f4efe0; color: #1c1a14; border-radius: 2px; padding: 16px 20px;
+    margin: 22px 0; position: relative; box-shadow: 0 3px 14px rgba(0, 0, 0, 0.5);
+    font-family: var(--font-body); }
+  .receipt::before, .receipt::after { content: ""; position: absolute; left: 0; right: 0; height: 7px;
+    background: linear-gradient(45deg, #f4efe0 5px, transparent 5px) 0 0 / 11px 11px repeat-x,
+      linear-gradient(-45deg, #f4efe0 5px, transparent 5px) 0 0 / 11px 11px repeat-x; }
+  .receipt::before { top: -7px; }
+  .receipt::after { bottom: -7px; transform: scaleY(-1); }
+  .receipt h2 { color: #1c1a14; letter-spacing: 0.1em; margin: 0 0 4px; }
+  .receipt .muted { color: #6b6552; }
+  .receipt ul { margin: 4px 0 10px; }
+  .receipt .rule { border-top: 1px dashed #b9b09a; padding-top: 8px; margin-top: 8px; }
+  .receipt .bc { display: flex; gap: 1px; height: 34px; justify-content: center; margin: 12px 0 2px; }
+  .receipt .bc i { background: #1c1a14; display: block; }
+  .receipt .thanks { text-align: center; color: #6b6552; font-size: 0.8rem; letter-spacing: 0.15em;
+    text-transform: uppercase; margin: 8px 0 0; }
+</style>`;
+
+// Bars keyed to the order id — deterministic, and it looks like a real till barcode.
+const barcode = (seed: string) =>
+  html`<div class="bc">${seed
+    .replace(/[^a-z0-9]/gi, "")
+    .slice(0, 30)
+    .split("")
+    .map((ch) => html`<i style="width:${(ch.charCodeAt(0) % 4) + 1}px"></i>`)}</div>`;
+
 const capLine = (caps: Partial<Record<Grade, number>>) => {
   const parts = (Object.entries(caps) as [Grade, number][]).map(([g, c]) =>
     c === 0 ? `Grade ${g}: won't buy` : `Grade ${g}: up to ${usd(c)}`,
@@ -163,31 +191,39 @@ buy.get("/buy/done", async (c) => {
   let ordersCard = null;
   if (own) {
     const myOrders = await listOrders(c.env, buyerId);
-    const skuIds = [...new Set(myOrders.flatMap((o) => o.rules.skuIds))];
-    const titlesById = new Map<string, string>();
-    if (skuIds.length) {
-      const { results } = await c.env.DB.prepare(
-        `SELECT id, title FROM skus WHERE id IN (${skuIds.map(() => "?").join(",")})`,
-      ).bind(...skuIds).all<{ id: string; title: string }>();
-      results.forEach((r) => titlesById.set(r.id, r.title));
-    }
-    ordersCard = html`<div class="card">
-      <h2>Your agent is watching for</h2>
+    if (!myOrders.length) {
+      ordersCard = html`<div class="card"><p class="muted">No standing orders on file. <a href="/buy">Set one.</a></p></div>`;
+    } else {
+      const skuIds = [...new Set(myOrders.flatMap((o) => o.rules.skuIds))];
+      const titlesById = new Map<string, string>();
+      if (skuIds.length) {
+        const { results } = await c.env.DB.prepare(
+          `SELECT id, title FROM skus WHERE id IN (${skuIds.map(() => "?").join(",")})`,
+        ).bind(...skuIds).all<{ id: string; title: string }>();
+        results.forEach((r) => titlesById.set(r.id, r.title));
+      }
+      ordersCard = html`<div class="receipt">
+      <h2>SnapFlip · standing order</h2>
+      <p class="muted" style="margin: 0">${myOrders[0].createdAt.slice(0, 10)} · ${buyerId}</p>
       ${myOrders.map(
-        (o) => html`<div>
+        (o) => html`<div class="rule">
           <strong>${o.rulesText}</strong>
           <span class="muted"> — up to ${usd(o.maxCents)}${o.status === "open" ? "" : ` (${o.status})`}</span>
           <ul class="muted">${o.rules.skuIds.map((id) => html`<li>${titlesById.get(id) ?? id}</li>`)}</ul>
           ${capLine(o.rules.gradeCaps)}
         </div>`,
       )}
+      ${barcode(myOrders[0].id)}
+      <p class="thanks">Keep this receipt · agent armed</p>
     </div>`;
+    }
   }
 
   return c.html(
     layout(
       "SnapFlip: you're in",
-      html`<p class="muted" style="font-family: var(--font-display); font-size: 0.72rem; letter-spacing: 0.22em; text-transform: uppercase">Step 3 of 3 &middot; agent live</p>
+      html`${receiptStyle}
+        <p class="muted" style="font-family: var(--font-display); font-size: 0.72rem; letter-spacing: 0.22em; text-transform: uppercase">Step 3 of 3 &middot; agent live</p>
         <h1>Your agent is live.</h1>
         <p class="muted">It will bid the moment a matching item is snapped.</p>
         ${bot && own
