@@ -4,6 +4,8 @@
   "compatibility_date": "2026-09-01",
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
+  // Static files (landing footage backdrops in public/media). Existing files are served before the Worker runs.
+  "assets": { "directory": "./public" },
 
   // Owner: C. Create with `wrangler d1 create snapflip` and paste the id here.
   "d1_databases": [

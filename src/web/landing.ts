@@ -103,9 +103,11 @@ const tapeScript = html`<script>
     var priceEl = document.getElementById("stage-price");
     var stampEl = document.getElementById("stamp");
     var clockEl = document.getElementById("clock-fill");
+    var stageEl = document.querySelector("#demo .stage"); // flea market → checkout footage at SOLD
     function stageReset() {
       if (priceEl) priceEl.textContent = "$6";
       if (stampEl) stampEl.classList.remove("on");
+      if (stageEl) stageEl.classList.remove("sold");
       if (clockEl) clockEl.style.width = "0%";
       for (var k = 1; k <= 5; k++) {
         var b = document.getElementById("sb" + k);
@@ -128,6 +130,7 @@ const tapeScript = html`<script>
         var w = document.getElementById("sb5");
         if (w) w.classList.add("win");
         if (stampEl) stampEl.classList.add("on");
+        if (stageEl) stageEl.classList.add("sold");
         if (clockEl) clockEl.style.width = "100%";
       }
     }
@@ -321,6 +324,28 @@ const statsScript = html`<script>
   refresh();
   setInterval(refresh, 5000);
   document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
+</script>`;
+
+/** Archival footage backdrop (public domain, Moving Image Archive). The poster paints first; the
+ *  clip only loads + plays while its section is on screen (see backdropScript). */
+const bd = (name: string, extra = "") => html`<div class="bd ${extra}" aria-hidden="true"><video muted loop playsinline preload="none" poster="/media/${name}.jpg" data-src="/media/${name}.mp4"></video></div>`;
+
+const backdropScript = html`<script>
+  (function () {
+    var still = matchMedia("(prefers-reduced-motion: reduce)").matches || (navigator.connection && navigator.connection.saveData);
+    if (still || !("IntersectionObserver" in window)) return; // posters only
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) {
+        var v = en.target;
+        if (en.isIntersecting) {
+          if (!v.getAttribute("src")) v.src = v.dataset.src;
+          var p = v.play();
+          if (p && p.catch) p.catch(function () {});
+        } else if (!v.paused) v.pause();
+      });
+    }, { rootMargin: "160px 0px" });
+    document.querySelectorAll(".bd video[data-src]").forEach(function (v) { io.observe(v); });
+  })();
 </script>`;
 
 const tourCamScript = html`<script>
@@ -604,7 +629,7 @@ landing.get("/", async (c) => {
     layout(
       "SnapFlip: sold before you buy it",
       html`<style>
-        .topbar { position: sticky; top: 0; z-index: 30; margin: -36px -20px 18px; padding: 10px 20px;
+        .topbar { position: sticky; top: 0; z-index: 30; margin: -14px -20px 14px; padding: 10px 20px;
           background: rgba(7, 10, 8, 0.88); backdrop-filter: blur(8px);
           border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
         .topbar .live-pill { display: inline-flex; align-items: center; gap: 8px; font-family: var(--font-display);
@@ -642,6 +667,36 @@ landing.get("/", async (c) => {
         .park-row input[name="sku"] { flex: 2 1 200px; width: auto; }
         .park-row input[name="max"] { flex: 0 1 110px; width: auto; min-width: 90px; }
         .park-row button { flex: 0 0 auto; }
+        /* Archival footage backdrops (the promo film's look): footage stays visible; a scrim sits only where text does. */
+        .has-bd { position: relative; overflow: hidden; isolation: isolate; }
+        .has-bd > .bd { position: absolute; inset: 0; z-index: -1; pointer-events: none; }
+        .bd video { width: 100%; height: 100%; object-fit: cover; display: block; filter: saturate(1.15) contrast(1.05); transform: scale(1.04); }
+        .bd::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(7,10,8,0.30), rgba(7,10,8,0.62)); }
+        .hero { margin: -6px -20px 18px; padding: 72px 24px 30px; min-height: min(78vh, 640px); display: flex; flex-direction: column; justify-content: flex-end;
+          align-items: flex-start; border-radius: 0 0 14px 14px; border-bottom: 1px solid var(--line); }
+        .hero > .bd::after { background: linear-gradient(90deg, rgba(7,10,8,0.88) 0%, rgba(7,10,8,0.62) 48%, rgba(7,10,8,0.18) 100%),
+          linear-gradient(0deg, rgba(7,10,8,0.85) 0%, rgba(7,10,8,0) 55%); }
+        .hero h1, .hero .lede, .hero .cta-note { text-shadow: 0 2px 14px rgba(0,0,0,0.85); max-width: 32em; }
+        .hero .park-row { max-width: 620px; width: 100%; }
+        button.primary { background: var(--phos); color: #06130b; border-color: var(--phos); font-weight: 800; text-shadow: none; }
+        button.primary:hover { background: #7dffab; box-shadow: 0 0 22px rgba(70,255,143,0.45); }
+        .card.has-bd, .stage.has-bd { background: #050806; }
+        #trust > .bd::after, #doors > .bd::after { background: linear-gradient(90deg, rgba(7,10,8,0.86) 0%, rgba(7,10,8,0.55) 60%, rgba(7,10,8,0.25) 100%); }
+        .stage > .bd::after { background: radial-gradient(ellipse at 50% 50%, rgba(7,10,8,0.62) 0%, rgba(7,10,8,0.25) 70%); }
+        .stage .big, .stage .clock-label, .stage .sn { text-shadow: 0 2px 10px rgba(0,0,0,0.9); }
+        .stage .sold-bd { opacity: 0; transition: opacity 0.5s ease; }
+        .stage.sold .sold-bd { opacity: 1; }
+        .stage.sold .sold-bd video { filter: saturate(1.3) brightness(1.12); }
+        .money-line { margin: 12px 0 4px; font-size: 0.92rem; }
+        .money-line b { font-family: var(--font-num); font-size: 1.25rem; font-weight: 400; color: var(--phos); }
+        details.more summary { cursor: pointer; font-size: 0.78rem; color: var(--muted); letter-spacing: 0.14em; text-transform: uppercase; font-family: var(--font-display); }
+        details.more p { font-size: 0.84rem; margin: 8px 0 0; }
+        .doors-h { font-family: var(--font-display); font-weight: 800; font-size: 1.5rem; margin: 0; color: var(--ink); text-shadow: 0 2px 12px rgba(0,0,0,0.85); }
+        @media (max-width: 719px) {
+          .hero { min-height: 70vh; padding-top: 56px; }
+          .hero > .bd::after { background: linear-gradient(0deg, rgba(7,10,8,0.92) 0%, rgba(7,10,8,0.55) 60%, rgba(7,10,8,0.3) 100%); }
+        }
+        .has-bd .qrbox { position: relative; }
         .funnel { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 14px 0 0; }
         .funnel .cell { border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px; }
         .funnel .cell.sell { border-color: #6a5200; background: rgba(255,176,0,0.04); }
@@ -734,7 +789,7 @@ landing.get("/", async (c) => {
           .demo-cols, .ob-cols, .rails, .vs, .funnel { grid-template-columns: minmax(0, 1fr); }
           .money { grid-template-columns: 1fr 1fr; }
           .money .m:nth-child(3)::before { content: none; }
-          .topbar { margin: -36px -20px 12px; }
+          .topbar { margin: -14px -20px 12px; }
           .topnav { display: none; }
           .qrbox { display: none; }
         }
@@ -742,35 +797,23 @@ landing.get("/", async (c) => {
       </style>
       <div class="topbar">
         <span class="live-pill"><i class="live-dot" id="live-dot"></i> <span id="hero-demand">order book opens live — be #1</span></span>
-        <nav class="topnav"><a href="#demo">tape</a><a href="#book">book</a><a href="#trust">trust</a><a href="#faq">faq</a></nav>
         <span class="spacer"></span>
         <a class="button mini-cta" href="/sell" style="background:transparent">I resell</a>
-        <a class="button mini-cta" href="/?tour=1" style="background:transparent">✈ tour</a>
         <a class="button mini-cta" href="/buy">Set order</a>
       </div>
-      <p class="eyebrow">◉ Startup Speedrun · live demo · real money</p>
-      <h1>Tell an agent what you're hunting. <span class="glow">It wins it for you.</span></h1>
-      <p class="lede">Set your max once — your agent bids every matching thrift find on a 60-second clock and never goes a dollar over. <span class="muted">Resellers snap the rack on Telegram; AI vision IDs and grades it; the seller only buys the item once your agent has already won it.</span></p>
-      <div class="proof-strip">
-        <div class="proof amber"><b>$6 → $38</b><span>simulated example · seller nets $34.20</span></div>
-        <div class="proof"><b>60s</b><span>ascending clock · reserve + $2 ticks · no sniping</span></div>
-        <div class="proof"><b>10%</b><span>fee only when it sells · vs typically 13–15% eBay</span></div>
-      </div>
-      <div class="cta-row">
-        <a class="button primary" href="/buy">I collect — set a standing order</a>
-        <a class="button ghost" href="/sell">I resell — see how it pays</a>
-      </div>
-      <p class="cta-note">Takes ~40 seconds. Your max is law — code enforces it, the model can only bid lower.</p>
-      <div class="card" id="park">
-        <h2>Park an order in 5 seconds</h2>
+      <section class="hero has-bd">
+        ${bd("storefront")}
+        <p class="eyebrow">◉ Live at Startup Speedrun · real money</p>
+        <h1>Tell an agent what you're hunting. <span class="glow">It wins it for you.</span></h1>
+        <p class="lede">Set your max once. When a reseller snaps a match at a thrift store, your agent bids in a 60-second auction — and never goes a dollar over.</p>
         <form method="get" action="/buy" class="park-row">
-          <input name="sku" list="sku-list" maxlength="120" placeholder="What are you hunting? e.g. Pokemon Yellow Version" autocomplete="off" aria-label="Item you want" />
+          <input name="sku" list="sku-list" maxlength="120" placeholder="What are you hunting? e.g. Pokemon Yellow" autocomplete="off" aria-label="Item you want" />
           <datalist id="sku-list"></datalist>
           <input name="max" type="number" min="1" max="1000" step="1" placeholder="Max $" aria-label="Max price in USD" />
-          <button type="submit">Park it →</button>
+          <button type="submit" class="primary">Start hunting →</button>
         </form>
-        <p class="muted" style="font-size:0.8rem;margin:8px 0 0">Your agent bids the moment one is snapped — charged only if it wins, never above your max.</p>
-      </div>
+        <p class="cta-note">Charged only if your agent wins — never above your max. <a href="/sell">Reselling instead? →</a></p>
+      </section>
       <script>
         (function () {
           var dl = document.getElementById("sku-list");
@@ -786,14 +829,11 @@ landing.get("/", async (c) => {
           }).catch(function () { /* free-text still works */ });
         })();
       </script>
-      <div class="funnel">
-        <div class="cell buy"><div class="k">For collectors</div><p>“Pokémon Yellow, authentic, good label, up to $45.” Your agent bids while you sleep — charged only when the seller confirms.</p></div>
-        <div class="cell sell"><div class="k">For resellers</div><p>One photo at the rack. Watch bids climb live. Buy the cart only if it clears your reserve. Walk away free if it doesn't.</p></div>
-      </div>
       <div class="card" id="demo">
-        <h2>How a snap becomes a sale <span class="badge" style="float: right">simulated tape · 15s</span></h2>
+        <h2>How a snap becomes a sale <span class="badge" style="float: right">simulated · 15s</span></h2>
         <div class="demo-cols">
-          <div class="stage">
+          <div class="stage has-bd">
+            ${bd("flea-market")}${bd("checkout", "sold-bd")}
             <div class="tag"><span class="tagtxt">$6 tag</span></div>
             <div class="big" id="stage-price">$6</div>
             <div class="clock"><i id="clock-fill"></i></div>
@@ -812,29 +852,11 @@ landing.get("/", async (c) => {
             <button id="replay" type="button" hidden>▸ replay</button>
           </div>
         </div>
-        <p class="muted" style="font-size:0.78rem;margin:8px 0 0">Scripted example — every dropout says why: grade cap, label wear, max reached. Real auctions stream the same feed to the seller on Telegram.</p>
-      </div>
-      <div class="card">
-        <h2>Where the money goes</h2>
-        <div class="money">
-          <div class="m sell"><b>$6</b><span>rack tag<br />you haven't paid yet</span></div>
-          <div class="m buy"><b>$38</b><span>clearing price<br />agent #5 wins</span></div>
-          <div class="m sell"><b>$34.20</b><span>seller nets<br />after 10% fee</span></div>
-          <div class="m buy"><b>$0 risk</b><span>no sale → walk away<br />nothing lost</span></div>
-        </div>
-        <p class="muted" style="font-size:0.82rem;margin:10px 0 0">Buyer card is authorized at the win, captured only when the seller buys the item and confirms with a photo. Seller payout releases on delivery via Stripe Connect. On a $38 sale: eBay nets ~$32.87 at a typical 13.5%* — SnapFlip nets $34.20.<br />*eBay all-in fees typically run 13–15% depending on category.</p>
-        <p class="muted" style="font-size:0.82rem;margin:6px 0 0" id="revenue-line">Protocol revenue so far: $0 — every sale adds 10%.</p>
-      </div>
-      <div class="card">
-        <h2>How it works</h2>
-        <div class="steps">
-          <div class="step"><span class="num">01</span><strong>Set — 40s</strong>
-            <span class="muted">Tell your agent the exact cart + max. Grade caps optional (“won't buy below B”). Never goes over.</span></div>
-          <div class="step"><span class="num">02</span><strong>Snap — 10s</strong>
-            <span class="muted">Reseller snaps it on Telegram at the rack. AI vision IDs the SKU and grades condition; the engine rejects repros.</span></div>
-          <div class="step"><span class="num">03</span><strong>Sold — 60s</strong>
-            <span class="muted">Matching agents bid on a live clock. Seller sees the price before paying. Buyer pays clearing, not max.</span></div>
-        </div>
+        <p class="money-line"><b>$6</b> rack tag → <b>$38</b> cleared → seller nets <b>$34.20</b>. No sale? Walk away — nothing lost.</p>
+        <details class="more"><summary>Where the money goes</summary>
+          <p class="muted">The buyer's card is authorized at the win and captured only when the seller buys the item and sends an in-hand photo. SnapFlip keeps 10%; the seller's payout releases on delivery via Stripe Connect. On a $38 sale eBay would net ~$32.87 (typical 13–15% all-in).</p>
+          <p class="muted" id="revenue-line">Protocol revenue so far: $0 — every sale adds 10%.</p>
+        </details>
       </div>
       <div class="card" id="book">
         <h2>Live order book <span class="badge live" style="float: right">REAL</span></h2>
@@ -843,77 +865,57 @@ landing.get("/", async (c) => {
           <div><div class="big" id="collectors">0</div><div class="muted">collectors</div></div>
           <div><div class="big" id="tx">0</div><div class="muted">sales</div></div>
         </div>
-        <div class="chips" id="catalog-chips" style="margin-top:12px"></div>
         <div class="ob-cols" id="ob-cols">
           <div><div class="obsub">Recent sales</div><ul class="feed" id="tape"><li>…</li></ul></div>
           <div><div class="obsub">Standing demand</div><ul class="depth" id="skus"></ul></div>
         </div>
         <div id="ob-empty" hidden>
-          <p class="muted" style="margin:12px 0 8px">The book opens live at the event — early collectors set the price. Be the first order and every reseller hunts for you.</p>
-          <p style="margin:0"><a class="button primary" href="/buy">Be collector #1 →</a></p>
+          <p class="muted" style="margin:4px 0 10px">The book opens live at the event. Early collectors set the price — every reseller then hunts for you.</p>
         </div>
+        <div class="obsub" style="margin-top:12px">Agents can hunt today</div>
+        <div class="chips" id="catalog-chips"></div>
       </div>
-      <div class="card" id="trust">
+      <div class="card has-bd" id="trust">
+        ${bd("cash-count")}
         <h2>Autonomy with guardrails</h2>
         <div class="rails">
           <div class="r"><strong>▣ Your max is law</strong>
-            <span>Enforced in code, not in the prompt. The model can only bid lower, never higher.</span></div>
-          <div class="r"><strong>◉ Charged on confirm</strong>
-            <span>Authorized at the win, captured only when the seller buys the item + sends proof.</span></div>
+            <span>Enforced in code, not the prompt. The model can only bid lower.</span></div>
+          <div class="r"><strong>◉ Charged on proof</strong>
+            <span>Captured only after the seller buys it and sends an in-hand photo.</span></div>
           <div class="r"><strong>⌗ Paid on delivery</strong>
-            <span>Seller payout releases after the item arrives. No ghost shipments.</span></div>
+            <span>The seller's payout releases once the item arrives.</span></div>
           <div class="r"><strong>✦ Every exit explained</strong>
-            <span>Agents say why they drop: grade cap, label wear, max reached. Auditable, not vibes.</span></div>
-        </div>
-      </div>
-      <div class="card">
-        <h2>Why resellers switch</h2>
-        <div class="vs">
-          <div>
-            <div class="obsub">The old way</div>
-            <ul class="old">
-              <li>Buy the cart first, hope later</li>
-              <li>Photograph, list, wait weeks</li>
-              <li>13–15% eBay fees on hope</li>
-            </ul>
-          </div>
-          <div>
-            <div class="obsub">SnapFlip</div>
-            <ul class="new">
-              <li>Know it's sold before you pay</li>
-              <li>One snap, 60-second auction</li>
-              <li>10% fee, only when it sells</li>
-            </ul>
-          </div>
+            <span>Agents say why they drop: grade cap, label wear, max reached.</span></div>
         </div>
       </div>
       <div class="card faq" id="faq">
         <h2>Fair questions</h2>
-        <details open><summary>What if nobody bids?</summary><p>You walk away. No listing, no fee, no dead inventory. The snap cost you 10 seconds.</p></details>
-        <details><summary>When is my card actually charged?</summary><p>Only after the seller buys the item and confirms with a photo. Before that it's just an authorization hold at the clearing price — never your max.</p></details>
-        <details><summary>What stops fakes?</summary><p>AI vision checks every snap for repro tells, and the auction engine hard-rejects anything flagged. Grade caps let buyers auto-skip rough copies.</p></details>
-        <details><summary>Do I need Telegram / Claude?</summary><p>Resellers live on Telegram. Collectors can use the web, Claude (MCP connector), or the Brainbase concierge — same order book.</p></details>
-        <details><summary>Is there a subscription?</summary><p>Collecting is free. Buyer Plus ($6/mo) wins the tie-breaks when two maxes collide. Sellers never pay to list — 10% only when it sells.</p></details>
-        <details><summary>How fast do sellers get paid?</summary><p>Standard payout lands on delivery, free. Trusted sellers can cash out at confirm time with express (−1% rush).</p></details>
+        <details><summary>What if nobody bids?</summary><p>You walk away. No listing, no fee, no dead inventory. The snap cost you 10 seconds.</p></details>
+        <details><summary>When is my card actually charged?</summary><p>Only after the seller buys the item and sends an in-hand photo. Before that it's an authorization hold at the clearing price — never your max.</p></details>
+        <details><summary>What stops fakes?</summary><p>AI vision checks every snap for repro tells, and the auction engine hard-rejects anything flagged. Grade caps let buyers skip rough copies.</p></details>
+        <details><summary>Do I need Telegram or Claude?</summary><p>Resellers use Telegram. Collectors can use the web, Claude (MCP connector) or the Brainbase concierge — same order book.</p></details>
+        <details><summary>What does it cost?</summary><p>Collecting is free. Sellers pay 10% only when it sells. Optional Buyer Plus ($6/mo) wins tie-breaks.</p></details>
       </div>
-      <div class="card">
-        <div class="row" style="align-items: flex-start">
+      <div class="card has-bd" id="doors">
+        ${bd("shelves")}
+        <div class="row" style="align-items: center">
           <div class="qrbox">${raw(qr)}</div>
           <div style="flex: 1; min-width: 240px">
-            <h2 style="margin: 0 0 4px">Two doors, one book</h2>
-            <p class="muted" style="margin: 4px 0 14px">Collectors: ${buyUrl}<br />Resellers: Telegram → live auction in 60s</p>
-            <div class="cta-row" style="margin-top:0">
-              <a class="button primary" href="/buy">I collect — set a standing order</a>
-              <a class="button ghost" href="/sell">I resell — how it works</a>
+            <p class="doors-h">Two doors, one book.</p>
+            <div class="cta-row" style="margin-top:10px">
+              <a class="button primary" href="/buy">I collect — start hunting</a>
+              <a class="button ghost" href="/sell">I resell — how it pays</a>
             </div>
           </div>
         </div>
       </div>
       <div style="display:none"><span id="demand-top">$0</span><span id="collectors-top">0</span><span id="tx-top">0</span></div>
       ${soonRail}
-      <p class="foot muted"><span class="blabel">Built with</span>Anthropic Claude · Featherless · Cloudflare Workers, D1, R2, Durable Objects · Stripe Connect · Brainbase<br />Built at Startup Speedrun.</p>
+      <p class="foot muted"><span class="blabel">Built with</span>Anthropic Claude · Featherless · Cloudflare Workers, D1, R2, Durable Objects · Stripe Connect · Brainbase<br />Built at Startup Speedrun · <a href="/?tour=1">take the scroll tour</a> · Archival footage: Moving Image Archive (public domain).</p>
       ${tapeScript}
-      ${statsScript}`,
+      ${statsScript}
+      ${backdropScript}`,
       { image: `${c.env.PUBLIC_URL}/og.png` },
     ),
   );

@@ -65,7 +65,7 @@ export const layout = (title: string, body: Body, opts: LayoutOpts = {}) => html
         border: 1px solid var(--line); border-radius: 6px; padding: 16px 18px; margin: 14px 0;
         box-shadow: inset 0 1px 0 rgba(70, 255, 143, 0.06), 0 2px 12px rgba(0, 0, 0, 0.45);
       }
-      .card > h2:first-child, .panel-title {
+      .card > h2:first-child, .card > .bd:first-child + h2, .panel-title {
         display: block; margin: -16px -18px 12px; padding: 6px 12px;
         border-bottom: 1px solid var(--line); border-radius: 6px 6px 0 0;
         background: rgba(70, 255, 143, 0.05); color: var(--muted);
