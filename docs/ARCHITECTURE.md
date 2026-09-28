@@ -84,8 +84,11 @@ At auction time, for each candidate order, Claude receives the photo, the grade 
 | POST | `/api/orders/{id}/raise` | Raise an order's max mid-auction (capped at payment limit) |
 | POST | `/api/buyers` | Concierge onboarding: creates buyer + token, returns `mcpUrl`, `setupUrl`, `telegramUrl` |
 | GET | `/api/orderbook` | Aggregated demand per SKU (landing page and seller "what's hot") |
+| GET | `/api/stats` | Live stats: demand, collectors, real transactions (excludes `b_demo_*` buyers) |
+| GET | `/qr` | Booth display: giant QR to `/buy` + live stats |
 | GET | `/a/{id}` | Public live auction page |
 | GET | `/a/{id}/ws` | WebSocket to `AuctionDO` |
+| GET | `/a/{id}/photo` | The snapped item's photo, streamed from R2 (immutable cache) |
 | POST | `/api/auctions/{id}/confirm` | Seller bought the item (photo) → capture payment |
 | POST | `/api/auctions/{id}/shipped` | Tracking number → buyer notified |
 | POST | `/api/auctions/{id}/delivered` | Release funds → Transfer to seller |
@@ -94,12 +97,12 @@ At auction time, for each candidate order, Claude receives the photo, the grade 
 | GET | `/buy/setup` | Stripe Checkout (setup mode) → saved card + code-enforced limit |
 | GET | `/sell/onboard` | Stripe Connect Express onboarding link |
 | POST | `/webhooks/stripe` | `checkout.session.completed`, `setup_intent.succeeded`, `payment_intent.*`, `account.updated` |
-| — | `/mcp` | MCP tools: `catalog`, `my_account`, `orderbook`, `create_standing_order`, `list_my_orders`, `cancel_order`, `get_auction` |
+| — | `/mcp` | MCP tools: `catalog`, `my_account`, `orderbook`, `create_standing_order`, `list_my_orders`, `cancel_order`, `get_auction`. Auth: per-buyer token (`Bearer` or `?token=`) |
 
 ## Payments flow
 
 1. **Payment limit (buyer onboarding).** For the demo: Checkout in `setup` mode saves a PaymentMethod on a Customer; `limit_cents` and `limit_expires_at` are set at signup and enforced in code. A Shared Payment Token scoped to SnapFlip remains the preferred production path — the slot for it is marked `TODO(C)` in `settleAuction`, pending whether SPTs support `capture_method=manual`.
-2. **Auction cleared.** Create a PaymentIntent for the clearing price with `capture_method=manual`, `off_session=true`, `confirm=true` and `transfer_group=auction_{id}`. This authorizes without charging. If the authorization fails, the next-highest agent wins at its own dropout price.
+2. **Auction cleared.** Create a PaymentIntent for the clearing price with `capture_method=manual`, `off_session=true`, `confirm=true` and `transfer_group=auction_{id}`. This authorizes without charging. If the authorization fails, the next-highest agent whose dropout covers it wins at the same clearing price — every bidder pays the price the clock stopped at, never their own (higher) maximum.
 3. **Seller confirms purchase** (photo of the item in hand) → `capture`. If the seller doesn't confirm within 2h, a 5-minute cron (`voidExpiredAuths`) cancels the PaymentIntent, reopens the winning order, and lowers the seller's reliability score.
 4. **Delivered** → `Transfer` of clearing price minus 10% fee minus label cost to the seller's Connect account, same `transfer_group`.
 5. **Dispute or not as described** → refund from the platform balance before any transfer. Holding funds until delivery is why we use separate charges and transfers rather than destination charges.

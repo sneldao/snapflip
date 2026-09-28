@@ -2,6 +2,19 @@
 
 Four people in parallel. **Hard stop 3:30 PM PT. Final video take recorded by 2:45 PM PT.**
 
+## Where we are
+
+**Live:** https://go.snapflip.workers.dev (worker `go`; D1 `snapflip`, R2 `snapflip-photos`, Queue `snapflip-match` all provisioned; remote schema applied, demo seed is local-only). Pre-commit hook (gitleaks + eslint + tsc) is enforced — keep the tree green or it blocks your commit.
+
+**Blocking everyone:** prod secrets aren't set yet (`wrangler secret put`: `API_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `ANTHROPIC_API_KEY`). The next deploy fails closed on every route except `/health` until they land — that's intentional.
+
+- **A — Seller:** Telegram webhook + photo→R2→identify→grade→reserve→auction flow wired; `/a/{id}` live page and `/a/{id}/photo` image streaming done. Open: raise-max button (calls B's `/api/orders/:id/raise`), low-confidence SKU picker, vision prompt tuning (needs `ANTHROPIC_API_KEY`, currently stubs).
+- **B — Engine:** Done pending live test — Claude rule parsing with code-enforced caps, deterministic valuation + Claude veto, soft-close + raise-your-max, fallback bidders now pay the same clearing price. Verified locally with seeded orders: 4-agent auction, staggered dropouts, correct winner/price.
+- **C — Money:** Done pending secrets — auth/capture/void/refund/transfer all implemented and exercised end-to-end in stub mode (settle → confirm → capture → deliver → transfer; cancel → expired + order reopened + reliability hit). Cron voids unconfirmed auths every 5 min. SPT deferred to post-demo; saved-card + code-enforced cap is the payment story. Remaining: live $1 run once `STRIPE_*` keys are set.
+- **D — Buyer/GTM:** Per-buyer MCP tokens (`sf_…`, hash-stored), `/api/buyers` concierge onboarding, `/buy` → connector URL flow, `/qr` + `/api/stats` for the booth. Open: commit it, Brainbase integration confirm, recruiting.
+
+**Demo buyers note:** seeded `b_demo_*` buyers have no token/card/Telegram — they can't win a real auction. `/api/stats` excludes them; keep it that way for "real numbers only."
+
 ## Decisions (defaults, change them now or never)
 
 - Wedge: retro video games (Game Boy / N64 / SNES cartridges).
@@ -83,14 +96,14 @@ Swap a stub for the real implementation without changing its signature. If you m
 
 ## Integration milestones
 
-| When | Milestone |
-|---|---|
-| +20 min | Contracts committed, empty Worker deployed |
-| +75 min | A: snap → SKU + grade. B: auction runs on seeded data. C: payment limit saved. |
-| +105 min | **Full loop in test mode:** snap → auction → authorize → capture → Telegram pings |
-| +120 min | Live mode $1 run. **Record backup take.** |
-| 2:45 PM | Final take recorded |
-| 3:15 PM | Devpost submitted (edit until 3:30) |
+| When | Milestone | Status |
+|---|---|---|
+| +20 min | Contracts committed, empty Worker deployed | ✅ contracts; worker live at go.snapflip.workers.dev |
+| +75 min | A: snap → SKU + grade. B: auction runs on seeded data. C: payment limit saved. | ✅ B (seeded auction runs); ✅ C (limit stored at signup); 🟡 A (flow wired, vision stubs until key) |
+| +105 min | **Full loop in test mode:** snap → auction → authorize → capture → Telegram pings | 🟡 loop verified in stub mode; awaiting secrets for real run |
+| +120 min | Live mode $1 run. **Record backup take.** | ⬜ blocked on `STRIPE_*` secrets |
+| 2:45 PM | Final take recorded | ⬜ |
+| 3:15 PM | Devpost submitted (edit until 3:30) | ⬜ |
 
 ## Cut order if behind
 
