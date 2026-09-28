@@ -47,16 +47,16 @@ landing.get("/api/stats", async (c) => {
 /** Scripted demo tape (clearly labeled SIMULATED) — types out a full snap→sold loop so judges
  *  get the product in ~15s with zero interaction. Honest framing: the stats/tape below are real,
  *  this reel is the pitch, not data. */
-const DEMO_TAPE: { tag: string; cls: string; txt: string }[] = [
+const DEMO_TAPE: { tag: string; cls: string; txt: string; price?: number; out?: number[]; sold?: boolean }[] = [
   { tag: "SNAP", cls: "amber", txt: "rack photo — pokemon_yellow.gb, $6 tag" },
   { tag: "CLAUDE", cls: "phos", txt: 'sku gb-pokemon-yellow-us · conf 0.97 · grade B "light label wear" · not a repro' },
   { tag: "DEMAND", cls: "phos", txt: "5 agents holding orders · $122 standing" },
   { tag: "AUCTION", cls: "phos", txt: "60s clock · reserve $10 · +$2/tick" },
-  { tag: "$10", cls: "dim", txt: "agents #1 #2 #3 #4 #5 in" },
-  { tag: "$20", cls: "dim", txt: "#3 out — cap $18" },
-  { tag: "$30", cls: "dim", txt: "#1 out — grade-B cap $25 · #4 out — max $30" },
-  { tag: "$38", cls: "dim", txt: "#2 out — label wear · #5 still in" },
-  { tag: "SOLD", cls: "phos bold", txt: "agent #5 wins $38 · seller nets $34.20 · card charged on seller confirm" },
+  { tag: "$10", cls: "dim", txt: "agents #1 #2 #3 #4 #5 in", price: 10 },
+  { tag: "$20", cls: "dim", txt: "#3 out — cap $18", price: 20, out: [3] },
+  { tag: "$30", cls: "dim", txt: "#1 out — grade-B cap $25 · #4 out — max $30", price: 30, out: [1, 4] },
+  { tag: "$38", cls: "dim", txt: "#2 out — label wear · #5 still in", price: 38, out: [2] },
+  { tag: "SOLD", cls: "phos bold", txt: "agent #5 wins $38 · seller nets $34.20 · card charged on seller confirm", sold: true },
   { tag: "LIVE", cls: "amber", txt: "real money · real agents · scan to join" },
 ];
 
@@ -68,6 +68,33 @@ const tapeScript = html`<script>
     if (!reel) return;
     var reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
     var timer = null;
+    var priceEl = document.getElementById("stage-price");
+    var stampEl = document.getElementById("stamp");
+    function stageReset() {
+      if (priceEl) priceEl.textContent = "—";
+      if (stampEl) stampEl.classList.remove("on");
+      for (var k = 1; k <= 5; k++) {
+        var b = document.getElementById("sb" + k);
+        if (b) b.classList.remove("out", "win");
+      }
+    }
+    function stageApply(e) {
+      if (e.price !== undefined && priceEl) {
+        priceEl.textContent = "$" + e.price;
+        if (!reduce) { priceEl.classList.remove("tick"); void priceEl.offsetWidth; priceEl.classList.add("tick"); }
+      }
+      if (e.out) {
+        e.out.forEach(function (n) {
+          var b = document.getElementById("sb" + n);
+          if (b) b.classList.add("out");
+        });
+      }
+      if (e.sold) {
+        var w = document.getElementById("sb5");
+        if (w) w.classList.add("win");
+        if (stampEl) stampEl.classList.add("on");
+      }
+    }
     function line(tag, cls, txt) {
       var d = document.createElement("div");
       d.className = "reel-line";
@@ -87,9 +114,11 @@ const tapeScript = html`<script>
     }
     function play() {
       reel.textContent = "";
+      stageReset();
       var i = 0;
       (function next() {
         if (document.hidden) { timer = setTimeout(next, 500); return; }
+        stageApply(TAPE[i]);
         var dur = line(TAPE[i].tag, TAPE[i].cls, TAPE[i].txt);
         if (++i < TAPE.length) { timer = setTimeout(next, dur + (document.body.classList.contains("turbo") ? 220 : 900)); }
         else {
@@ -158,12 +187,22 @@ const statsScript = html`<script>
       animate("demand", Math.round(ob.demandCents / 100), dollars);
       animate("collectors", ob.collectors, plain);
       animate("tx", ob.transactions, plain);
+      const cols = document.getElementById("ob-cols");
+      const empt = document.getElementById("ob-empty");
+      if (cols && empt) {
+        const empty = !(ob.recent && ob.recent.length) && !(ob.skus && ob.skus.length);
+        cols.hidden = empty;
+        empt.hidden = !empty;
+      }
+      const dash = function () {
+        const li = document.createElement("li");
+        li.textContent = "—";
+        return li;
+      };
       const ul = document.getElementById("skus");
       if (ul) {
         if (!ob.skus.length) {
-          const li = document.createElement("li");
-          li.textContent = "No orders yet — be the first. Scan the code.";
-          ul.replaceChildren(li);
+          ul.replaceChildren(dash());
         } else {
           const top = ob.skus.slice(0, 8);
           const peak = Math.max(1, ...top.map((s) => s.demand_cents || 0));
@@ -179,7 +218,7 @@ const statsScript = html`<script>
             bar.appendChild(fill);
             const n = document.createElement("span");
             n.className = "n";
-            n.textContent = "$" + Math.round((s.demand_cents || 0) / 100).toLocaleString() + " · " + s.collectors + " collectors";
+            n.textContent = "$" + Math.round((s.demand_cents || 0) / 100).toLocaleString() + " · " + s.collectors + (s.collectors === 1 ? " collector" : " collectors");
             li.append(t, bar, n);
             return li;
           }));
@@ -188,9 +227,7 @@ const statsScript = html`<script>
       const tape = document.getElementById("tape");
       if (tape) {
         if (!ob.recent || !ob.recent.length) {
-          const li = document.createElement("li");
-          li.textContent = "No auctions yet — snap a cartridge to start one.";
-          tape.replaceChildren(li);
+          tape.replaceChildren(dash());
         } else {
           tape.replaceChildren(...ob.recent.map((a) => {
             const li = document.createElement("li");
@@ -211,15 +248,40 @@ const statsScript = html`<script>
 landing.get("/", async (c) => {
   const buyUrl = `${c.env.PUBLIC_URL}/buy`;
   const qr = await qrSvg(buyUrl, 1);
+  const tg = c.env.TELEGRAM_BOT_USERNAME;
   return c.html(
     layout(
       "SnapFlip: sold before you buy it",
       html`<style>
         .eyebrow { font-family: var(--font-display); font-size: 0.72rem; letter-spacing: 0.28em;
           text-transform: uppercase; color: var(--muted); margin: 0 0 6px; }
-        .reel { font-family: var(--font-num); font-size: 1.15rem; line-height: 1.7; min-height: 20em;
+        h1 { font-size: clamp(1.9rem, 6vw, 2.6rem); }
+        .cta-row { display: flex; gap: 12px; flex-wrap: wrap; margin: 18px 0 6px; }
+        .button.ghost { background: transparent; color: var(--phos); border-color: var(--phos-dim); }
+        .button.ghost:hover { background: rgba(70, 255, 143, 0.08); border-color: var(--phos);
+          box-shadow: 0 0 16px rgba(70, 255, 143, 0.25); }
+        .demo-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 22px; align-items: start; }
+        .stage { position: relative; border: 1px dashed var(--line); border-radius: 6px;
+          padding: 18px 14px; min-height: 15em; text-align: center; }
+        .stage .tag { padding: 2px 14px 4px 30px; margin-bottom: 12px; }
+        .tag .tagtxt { color: #1c1a14; text-shadow: none; font-family: var(--font-num); font-size: 1.25rem; }
+        #stage-price { font-size: 4.6rem; }
+        .stage-bots { display: flex; justify-content: center; gap: 14px; margin-top: 10px; }
+        .sb { display: flex; flex-direction: column; align-items: center; gap: 5px; }
+        .sb .sn { font-family: var(--font-num); font-size: 0.95rem; color: var(--muted); line-height: 1; }
+        .sb.out { opacity: 0.35; filter: grayscale(1); }
+        .sb.win .botw { filter: drop-shadow(0 0 9px rgba(70, 255, 143, 0.9)); }
+        .sb.win .sn { color: var(--phos); text-shadow: 0 0 8px rgba(70, 255, 143, 0.6); }
+        .stamp { position: absolute; top: 38%; left: 50%; transform: translate(-50%, -50%) rotate(-12deg);
+          font-family: var(--font-display); font-weight: 800; font-size: 1.6rem; letter-spacing: 0.08em;
+          color: var(--amber); border: 2px solid var(--amber); border-radius: 4px; padding: 4px 14px;
+          background: rgba(7, 10, 8, 0.82); opacity: 0;
+          text-shadow: 0 0 12px rgba(255, 176, 0, 0.7); box-shadow: 0 0 16px rgba(255, 176, 0, 0.25); }
+        .stamp.on { opacity: 1; animation: stampin 0.35s cubic-bezier(0.2, 1.6, 0.4, 1) both; }
+        @keyframes stampin { from { transform: translate(-50%, -50%) rotate(-12deg) scale(2.2); opacity: 0; } }
+        .reel { font-family: var(--font-num); font-size: 1.05rem; line-height: 1.7; min-height: 15em;
           padding: 4px 0; white-space: pre-wrap; }
-        .reel-line .reel-tag { display: inline-block; width: 5.5em; }
+        .reel-line .reel-tag { display: inline-block; width: 6.8em; flex: none; white-space: nowrap; }
         .reel-tag.phos { color: var(--phos); }
         .reel-tag.amber { color: var(--amber); }
         .reel-tag.dim { color: var(--muted); }
@@ -234,7 +296,23 @@ landing.get("/", async (c) => {
         .step .num { font-family: var(--font-num); font-size: 2rem; color: var(--phos); display: block; }
         .step strong { font-family: var(--font-display); font-size: 0.8rem; letter-spacing: 0.12em;
           text-transform: uppercase; display: block; margin-bottom: 2px; }
+        .ob-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; margin-top: 14px; }
+        .obsub { font-family: var(--font-display); font-size: 0.68rem; font-weight: 600;
+          letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
+        .rails { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
+        .rails .r strong { display: block; font-family: var(--font-display); font-size: 0.78rem;
+          letter-spacing: 0.1em; text-transform: uppercase; color: var(--phos); margin-bottom: 2px; }
+        .rails .r span { color: var(--muted); font-size: 0.85rem; }
+        .vs { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; }
+        .vs ul { list-style: none; padding: 0; margin: 6px 0 0; font-size: 0.92rem; }
+        .vs li { padding: 3px 0; }
+        .vs .old li { color: var(--muted); }
+        .vs .old li::before { content: "✕ "; color: var(--red); }
+        .vs .new li { color: var(--phos); }
+        .vs .new li::before { content: "▸ "; color: var(--phos-dim); }
         .foot { margin-top: 28px; font-size: 0.8rem; }
+        .foot .blabel { font-family: var(--font-display); font-size: 0.62rem; font-weight: 600;
+          letter-spacing: 0.2em; text-transform: uppercase; color: var(--phos-dim); margin-right: 8px; }
         /* Thrift price tag around the demand figure. */
         .tag { display: inline-block; background: #f0e2a8; border-radius: 4px; padding: 2px 18px 6px 34px;
           transform: rotate(-2deg); position: relative; box-shadow: 2px 3px 0 rgba(0, 0, 0, 0.4); }
@@ -246,53 +324,109 @@ landing.get("/", async (c) => {
           font-size: 0.8rem; letter-spacing: 0.2em; color: var(--amber); text-shadow: 0 0 12px rgba(255, 176, 0, 0.8);
           animation: pulse 0.9s ease-in-out infinite; }
         body.turbo .reel { text-shadow: 0 0 12px rgba(70, 255, 143, 0.55); }
-        @media (prefers-reduced-motion: reduce) { .turbo-badge { animation: none; } }
+        @media (max-width: 719px) {
+          .demo-cols, .ob-cols, .rails, .vs { grid-template-columns: minmax(0, 1fr); }
+        }
+        @media (prefers-reduced-motion: reduce) { .turbo-badge, .stamp.on { animation: none; } }
       </style>
       <p class="eyebrow">SnapFlip — agentic resale · live order book</p>
       <h1>Sold before you buy it.</h1>
       <p class="muted">Buyer agents bid on thrift finds while they're still on the rack.</p>
+      <div class="cta-row">
+        <a class="button" href="/buy">I collect — set a standing order</a>
+        ${tg ? html`<a class="button ghost" href="https://t.me/${tg}">I resell — snap on Telegram</a>` : ""}
+      </div>
       <div class="card">
         <h2>How a snap becomes a sale <span class="badge" style="float: right">simulated tape</span></h2>
-        <div class="reel" id="reel"></div>
-        <button id="replay" type="button" hidden>▸ replay</button>
-      </div>
-      <p><a class="button" href="/buy">Start hunting — set a standing order</a></p>
-      <div class="card">
-        <h2>Live right now</h2>
-        <div class="row">
-          <div><div class="tag"><div class="big" id="demand">$0</div></div><div class="muted">standing demand</div></div>
-          <div><div class="big" id="collectors">0</div><div class="muted">collectors</div></div>
-          <div><div class="big" id="tx">0</div><div class="muted">real transactions</div></div>
+        <div class="demo-cols">
+          <div class="stage">
+            <div class="tag"><span class="tagtxt">$6 tag</span></div>
+            <div class="big" id="stage-price">—</div>
+            <div class="stage-bots">
+              <div class="sb" id="sb1"><span class="botw"><i class="bot" style="--h: 0deg"></i></span><span class="sn">#1</span></div>
+              <div class="sb" id="sb2"><span class="botw"><i class="bot" style="--h: 47deg"></i></span><span class="sn">#2</span></div>
+              <div class="sb" id="sb3"><span class="botw"><i class="bot" style="--h: 94deg"></i></span><span class="sn">#3</span></div>
+              <div class="sb" id="sb4"><span class="botw"><i class="bot" style="--h: 141deg"></i></span><span class="sn">#4</span></div>
+              <div class="sb" id="sb5"><span class="botw"><i class="bot" style="--h: 188deg"></i></span><span class="sn">#5</span></div>
+            </div>
+            <div class="stamp" id="stamp">SOLD $38</div>
+          </div>
+          <div>
+            <div class="reel" id="reel"></div>
+            <button id="replay" type="button" hidden>▸ replay</button>
+          </div>
         </div>
-      </div>
-      <div class="card">
-        <h2>Auction tape — real</h2>
-        <ul class="feed" id="tape"><li>…</li></ul>
       </div>
       <div class="card">
         <h2>How it works</h2>
         <div class="steps">
           <div class="step"><span class="num">01</span><strong>Set</strong>
-            <span class="muted">Name the cart and your max. The spending limit is capped and expires — the agent can never exceed it.</span></div>
+            <span class="muted">Tell your agent the cart and your max. It never goes over.</span></div>
           <div class="step"><span class="num">02</span><strong>Snap</strong>
-            <span class="muted">A reseller photographs it on Telegram. Claude IDs the SKU and grades it; matching agents enter a 60s clock auction.</span></div>
+            <span class="muted">A reseller snaps it on Telegram. Claude IDs and grades it.</span></div>
           <div class="step"><span class="num">03</span><strong>Sold</strong>
-            <span class="muted">The seller sees the clearing price before paying. Buy, confirm, card captured; payout on delivery.</span></div>
+            <span class="muted">Agents bid on a 60s clock. The seller sees the price before paying.</span></div>
         </div>
       </div>
       <div class="card">
-        <h2>Market depth</h2>
-        <div class="row" style="align-items: flex-start">
-          <div class="qrbox">${raw(qr)}</div>
-          <div style="flex: 1; min-width: 300px">
-            <ul class="depth" id="skus"></ul>
-            <p class="muted">Point your phone at the code or go to ${buyUrl}</p>
+        <h2>Live order book <span class="badge live" style="float: right">REAL</span></h2>
+        <div class="row">
+          <div><div class="tag"><div class="big" id="demand">$0</div></div><div class="muted">standing demand</div></div>
+          <div><div class="big" id="collectors">0</div><div class="muted">collectors</div></div>
+          <div><div class="big" id="tx">0</div><div class="muted">real transactions</div></div>
+        </div>
+        <div class="ob-cols" id="ob-cols">
+          <div><div class="obsub">Recent sales</div><ul class="feed" id="tape"><li>…</li></ul></div>
+          <div><div class="obsub">Standing demand</div><ul class="depth" id="skus"></ul></div>
+        </div>
+        <p class="muted" id="ob-empty" hidden>The order book opens at the event — be collector #1.</p>
+      </div>
+      <div class="card">
+        <h2>Agents with a limit, not a blank check</h2>
+        <div class="rails">
+          <div class="r"><strong>Your max is law</strong>
+            <span>Code enforces it. The model can only bid lower, never higher.</span></div>
+          <div class="r"><strong>Charged on confirm</strong>
+            <span>Your card is authorized at the win and captured only when the seller buys the item.</span></div>
+          <div class="r"><strong>Paid on delivery</strong>
+            <span>The seller's payout is released after the item arrives.</span></div>
+          <div class="r"><strong>Every exit explained</strong>
+            <span>Agents say why they drop: grade cap, label wear, max reached.</span></div>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Why resellers switch</h2>
+        <div class="vs">
+          <div>
+            <div class="obsub">The old way</div>
+            <ul class="old">
+              <li>Buy the cart first</li>
+              <li>Photograph, list, wait</li>
+              <li>~13.6% eBay fee</li>
+            </ul>
+          </div>
+          <div>
+            <div class="obsub">SnapFlip</div>
+            <ul class="new">
+              <li>Know it's sold before you pay</li>
+              <li>One snap, 60-second auction</li>
+              <li>10% fee, only when it sells</li>
+            </ul>
           </div>
         </div>
       </div>
-      <p><a class="button" href="/buy">Set a standing order</a></p>
+      <div class="card">
+        <div class="row" style="align-items: flex-start">
+          <div class="qrbox">${raw(qr)}</div>
+          <div style="flex: 1; min-width: 240px">
+            <h2 style="margin: 0 0 4px">Scan to set a standing order</h2>
+            <p class="muted" style="margin: 4px 0 14px">${buyUrl}</p>
+            <a class="button" href="/buy">I collect — set a standing order</a>
+          </div>
+        </div>
+      </div>
       ${soonRail}
-      <p class="foot muted">built at the startup speedrun — anthropic claude · cloudflare workers/d1/r2/do · stripe connect · brainbase</p>
+      <p class="foot muted"><span class="blabel">Built with</span>Anthropic Claude · Cloudflare Workers, D1, R2, Durable Objects · Stripe Connect · Brainbase<br />Built at the startup speedrun.</p>
       ${tapeScript}
       ${statsScript}`,
     ),

@@ -40,12 +40,6 @@ auctionPage.get("/a/:id", (c) =>
           padding: 7px 12px 7px 8px; background: rgba(70, 255, 143, 0.05); }
         .chip-a.out { opacity: 0.38; background: transparent; }
         .chip-a.out .nm { text-decoration: line-through; }
-        .botw { width: 24px; height: 26px; flex: 0 0 auto; }
-        .bot { display: block; width: 4px; height: 4px; --c: var(--phos); filter: hue-rotate(var(--h, 0deg));
-          box-shadow: 8px 0 var(--c), 0 4px var(--c), 4px 4px var(--c), 8px 4px var(--c), 12px 4px var(--c), 16px 4px var(--c),
-            0 8px var(--c), 8px 8px var(--c), 16px 8px var(--c),
-            0 12px var(--c), 4px 12px var(--c), 8px 12px var(--c), 12px 12px var(--c), 16px 12px var(--c),
-            4px 16px var(--c), 8px 16px var(--c), 12px 16px var(--c), 4px 20px var(--c), 12px 20px var(--c); }
         .chip-a .nm { font-family: var(--font-num); font-size: 1.1rem; line-height: 1; }
         .chip-a .why { display: block; color: var(--muted); font-size: 0.72rem; font-family: var(--font-body); }
       </style>

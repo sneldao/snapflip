@@ -127,6 +127,13 @@ export const layout = (title: string, body: Body, opts: LayoutOpts = {}) => html
       .depth .bar { flex: 1; height: 10px; background: rgba(70, 255, 143, 0.08); border: 1px solid var(--line); border-radius: 2px; overflow: hidden; }
       .depth .bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--phos-dim), var(--phos)); box-shadow: 0 0 8px rgba(70, 255, 143, 0.4); }
       .depth .n { flex: 0 0 auto; color: var(--muted); font-size: 0.85rem; }
+      /* Pixel-bot agent avatar — hue set per instance via --h. */
+      .botw { width: 24px; height: 26px; flex: 0 0 auto; }
+      .bot { display: block; width: 4px; height: 4px; --c: var(--phos); filter: hue-rotate(var(--h, 0deg));
+        box-shadow: 8px 0 var(--c), 0 4px var(--c), 4px 4px var(--c), 8px 4px var(--c), 12px 4px var(--c), 16px 4px var(--c),
+          0 8px var(--c), 8px 8px var(--c), 16px 8px var(--c),
+          0 12px var(--c), 4px 12px var(--c), 8px 12px var(--c), 12px 12px var(--c), 16px 12px var(--c),
+          4px 16px var(--c), 8px 16px var(--c), 12px 16px var(--c), 4px 20px var(--c), 12px 20px var(--c); }
       /* Category pipeline rail — visible product roadmap, clearly not live. */
       .soon-rail { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; margin: 22px 0 0; padding: 9px 12px; border: 1px dashed var(--line); border-radius: 6px; }
       .soon-tag { font-family: var(--font-display); font-weight: 600; font-size: 0.62rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--phos-dim); }
