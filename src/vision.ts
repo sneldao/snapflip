@@ -1,5 +1,5 @@
 // Owner: A. Claude vision: identify the exact SKU and grade condition from a photo.
-import { claudeJson } from "./lib/claude";
+import { claudeJson, llmAvailable } from "./lib/claude";
 import { CONDITION_FLAGS } from "./lib/flags";
 import type { Env, GradeReport, Identification, Sku } from "./types";
 
@@ -22,7 +22,7 @@ function image(photo: ArrayBuffer, mediaType: MediaType) {
 export async function identify(env: Env, photo: ArrayBuffer, mediaType: MediaType = "image/jpeg"): Promise<Identification> {
   const { results } = await env.DB.prepare("SELECT id, title, platform, region FROM skus").all<Pick<Sku, "id" | "title" | "platform" | "region">>();
 
-  if (!env.ANTHROPIC_API_KEY) {
+  if (!llmAvailable(env)) {
     // Stub so the flow works without a key. Remove once the prompt is tuned.
     return { skuId: "gb-pokemon-yellow-us", title: "Pokemon Yellow Version", confidence: 0.99, alternatives: [] };
   }
@@ -44,7 +44,7 @@ Shape: {"skuId": string|null, "title": string, "confidence": number 0..1, "alter
 }
 
 export async function grade(env: Env, photo: ArrayBuffer, title: string, mediaType: MediaType = "image/jpeg"): Promise<GradeReport> {
-  if (!env.ANTHROPIC_API_KEY) {
+  if (!llmAvailable(env)) {
     return { grade: "B", notes: "Stub grade: light label wear.", flags: ["label_wear"] };
   }
 

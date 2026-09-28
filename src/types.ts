@@ -22,6 +22,9 @@ export interface Env {
   TELEGRAM_BOT_TOKEN: string;
   TELEGRAM_WEBHOOK_SECRET: string;
   ANTHROPIC_API_KEY: string;
+  // Fallback provider (OpenAI-compatible): used when ANTHROPIC_API_KEY is absent or fails.
+  FEATHERLESS_API_KEY?: string;
+  FEATHERLESS_MODEL?: string;
   STRIPE_SECRET_KEY: string;
   STRIPE_WEBHOOK_SECRET: string;
   BRAINBASE_LABS_API_KEY?: string;
@@ -136,7 +139,7 @@ export interface AuctionView {
   winner?: { orderId: string; label: string; priceCents: number };
 }
 
-/** Winner first, then fallbacks in order. */
+/** Winner first, then fallbacks in order — everyone pays the same clearing price. */
 export interface RankedBid {
   orderId: string;
   priceCents: number;

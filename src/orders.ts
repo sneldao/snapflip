@@ -2,7 +2,7 @@
 import { Hono } from "hono";
 import { z } from "zod";
 import { buyerAgent } from "./buyer";
-import { claudeJson } from "./lib/claude";
+import { claudeJson, llmAvailable } from "./lib/claude";
 import { CONDITION_FLAGS, knownFlags } from "./lib/flags";
 import { newId, requireApiKey, type App } from "./lib/util";
 import type { Env, Grade, Order, OrderRules } from "./types";
@@ -46,7 +46,7 @@ async function parseRules(env: Env, input: CreateOrderInput): Promise<OrderRules
   const { results: catalog } = await env.DB.prepare("SELECT id, title, platform, region FROM skus").all<CatalogRow>();
   const known = new Set(catalog.map((s) => s.id));
 
-  if (!env.ANTHROPIC_API_KEY) return fallbackRules(input, catalog);
+  if (!llmAvailable(env)) return fallbackRules(input, catalog);
 
   let raw: RawRules;
   try {

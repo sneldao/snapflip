@@ -1,5 +1,5 @@
 // Owner: B. Find standing orders that match a snap and compute each agent's private dropout price.
-import { claudeJson } from "./lib/claude";
+import { claudeJson, llmAvailable } from "./lib/claude";
 import type { Env, Grade, MatchJob, OrderRules, Snap, Valuation } from "./types";
 
 /**
@@ -95,7 +95,7 @@ export async function findCandidates(env: Env, snap: Snap): Promise<Valuation[]>
   }));
 
   // Deterministic result is the source of truth for money. Claude only refines eligible matches.
-  if (!env.ANTHROPIC_API_KEY) return deterministic.map((d) => d.val);
+  if (!llmAvailable(env)) return deterministic.map((d) => d.val);
   return Promise.all(
     deterministic.map((d) => (d.val.eligible ? verifyOne(env, snap, d.val, d.rulesText) : Promise.resolve(d.val))),
   );

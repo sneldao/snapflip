@@ -1,0 +1,19 @@
+# Copy to .dev.vars (gitignored) and fill in your own keys. Overrides wrangler.jsonc vars locally.
+ENVIRONMENT=dev
+PUBLIC_URL=http://localhost:8787
+
+# Shared secret for server-to-server calls (Brainbase concierge -> /api/orders, MCP clients).
+API_KEY=change-me
+
+TELEGRAM_BOT_TOKEN=
+# Any random string; sent by Telegram in X-Telegram-Bot-Api-Secret-Token.
+TELEGRAM_WEBHOOK_SECRET=
+
+ANTHROPIC_API_KEY=
+# Fallback model provider (OpenAI-compatible). Used when ANTHROPIC_API_KEY is absent/fails.
+# Optional FEATHERLESS_MODEL overrides the default (Qwen/Qwen2.5-VL-72B-Instruct).
+FEATHERLESS_API_KEY=
+STRIPE_SECRET_KEY=
+STRIPE_WEBHOOK_SECRET=
+BRAINBASE_LABS_API_KEY=
+PRICECHARTING_API_KEY=

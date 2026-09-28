@@ -40,3 +40,24 @@ export const devOnly: MiddlewareHandler<App> = async (c, next) => {
   if (!isDev(c.env)) return c.json({ error: "not found" }, 404);
   await next();
 };
+
+/** Secrets whose stub fallbacks are dev-only; all must be present when ENVIRONMENT != "dev". */
+const REQUIRED_SECRETS = [
+  "API_KEY",
+  "STRIPE_SECRET_KEY",
+  "STRIPE_WEBHOOK_SECRET",
+  "TELEGRAM_BOT_TOKEN",
+  "TELEGRAM_WEBHOOK_SECRET",
+] as const;
+
+/**
+ * Names of required secrets missing from the environment. Always empty in dev, where stub
+ * fallbacks are allowed; elsewhere a non-empty result means the deploy is misconfigured and
+ * would silently run on stubs. At least one model provider key is required.
+ */
+export function missingSecrets(env: Env): string[] {
+  if (isDev(env)) return [];
+  const missing: string[] = REQUIRED_SECRETS.filter((k) => !env[k]);
+  if (!env.ANTHROPIC_API_KEY && !env.FEATHERLESS_API_KEY) missing.push("ANTHROPIC_API_KEY or FEATHERLESS_API_KEY");
+  return missing;
+}

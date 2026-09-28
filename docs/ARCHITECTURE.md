@@ -65,7 +65,7 @@ At auction time, for each candidate order, Claude receives the photo, the grade 
 | Component | Responsibility |
 |---|---|
 | `src/index.ts` | Router: HTTP endpoints, Telegram webhook, Stripe webhook, MCP mount |
-| `src/vision.ts` | Claude calls: `identify(photo) → {sku_id, title, confidence}`, `grade(photo) → {grade, notes, flags}` |
+| `src/vision.ts` | Model calls: `identify(photo) → {sku_id, title, confidence}`, `grade(photo) → {grade, notes, flags}` (Anthropic, falling back to Featherless) |
 | `src/match.ts` | Candidate lookup (D1) and Claude verification and valuation for each order |
 | `src/auction.ts` | `AuctionDO`: state machine, alarm clock, WebSocket fan-out, writes result to D1 |
 | `src/buyer.ts` | `BuyerAgent` (Agents SDK): orders, payment reference, notifications, raise-max handling |
@@ -131,6 +131,6 @@ Photos go in R2 (`snaps/{id}.jpg`). Live auction state lives in `AuctionDO` stor
 
 ## Secrets (`wrangler secret put`, never commit)
 
-`API_KEY`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `ANTHROPIC_API_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `BRAINBASE_LABS_API_KEY`, `PRICECHARTING_API_KEY` (optional reference prices; otherwise Claude web search). `TELEGRAM_BOT_USERNAME` is a plain var, not a secret.
+`API_KEY`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, plus **at least one model provider**: `ANTHROPIC_API_KEY` or `FEATHERLESS_API_KEY` (OpenAI-compatible fallback; `FEATHERLESS_MODEL` var overrides the default model). Optional: `BRAINBASE_LABS_API_KEY`, `PRICECHARTING_API_KEY` (reference prices; otherwise model web search). `TELEGRAM_BOT_USERNAME` is a plain var, not a secret.
 
 Endpoints that change state check a shared secret (Telegram header, Stripe signature, API key for Brainbase/admin endpoints). MCP is authenticated per buyer: `Authorization: Bearer sf_…` or `?token=` (Claude.ai custom connectors only take a URL); the token resolves to a `buyerId` server-side — clients can't pass one. No unauthenticated writes.

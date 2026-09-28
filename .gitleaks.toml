@@ -1,0 +1,6 @@
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Template files contain placeholder keys with empty values, not secrets."
+paths = ['''\.dev\.vars\.example''']
