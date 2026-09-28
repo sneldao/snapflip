@@ -24,6 +24,9 @@ export const layout = (title: string, body: Body) => html`<!doctype html>
       ul { padding-left: 18px; }
       .drop { color: #ff7b7b; }
       .win { color: #5dff9d; }
+      .row { display: flex; gap: 24px; align-items: center; flex-wrap: wrap; }
+      .qrbox { background: #fff; border-radius: 8px; padding: 8px; line-height: 0; }
+      .qrbox svg { width: 140px; height: auto; }
     </style>
   </head>
   <body>
