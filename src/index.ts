@@ -4,7 +4,7 @@ import { auctions } from "./auction";
 import { handleMatchBatch } from "./match";
 import { mcpHandler } from "./mcp";
 import { orders } from "./orders";
-import { payments } from "./payments";
+import { payments, voidExpiredAuths } from "./payments";
 import { stripeWebhook } from "./stripe-webhook";
 import { telegram } from "./telegram";
 import { auctionPage } from "./web/auction";
@@ -41,6 +41,7 @@ app.onError((err, c) => {
 export default {
   fetch: app.fetch,
   queue: (batch, env) => handleMatchBatch(batch, env),
+  scheduled: (_event, env, ctx) => ctx.waitUntil(voidExpiredAuths(env)),
 } satisfies ExportedHandler<Env, MatchJob>;
 
 export { AuctionDO } from "./auction";

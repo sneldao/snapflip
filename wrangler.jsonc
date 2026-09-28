@@ -7,7 +7,7 @@
 
   // Owner: C. Create with `wrangler d1 create snapflip` and paste the id here.
   "d1_databases": [
-    { "binding": "DB", "database_name": "snapflip", "database_id": "REPLACE_WITH_D1_ID" }
+    { "binding": "DB", "database_name": "snapflip", "database_id": "08a6acfb-3cce-4a9b-96d1-2ac5c962bb96" }
   ],
   // `wrangler r2 bucket create snapflip-photos`
   "r2_buckets": [{ "binding": "PHOTOS", "bucket_name": "snapflip-photos" }],
@@ -16,6 +16,9 @@
     "producers": [{ "binding": "MATCH_QUEUE", "queue": "snapflip-match" }],
     "consumers": [{ "queue": "snapflip-match", "max_batch_size": 10, "max_batch_timeout": 1 }]
   },
+
+  // Voids payment authorizations whose seller never confirmed (payments.ts).
+  "triggers": { "crons": ["*/5 * * * *"] },
 
   "durable_objects": {
     "bindings": [

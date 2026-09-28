@@ -70,7 +70,7 @@ CREATE TABLE IF NOT EXISTS snaps (
 CREATE TABLE IF NOT EXISTS auctions (
   id TEXT PRIMARY KEY,
   snap_id TEXT NOT NULL REFERENCES snaps(id),
-  status TEXT NOT NULL,                    -- live | cleared | no_sale | settled | captured | released | failed
+  status TEXT NOT NULL,                    -- live | cleared | no_sale | settled | captured | released | failed | expired | refunded
   started_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   ended_at TEXT,
   reserve_cents INTEGER NOT NULL,
@@ -79,6 +79,7 @@ CREATE TABLE IF NOT EXISTS auctions (
   payment_intent_id TEXT,
   transfer_id TEXT
 );
+CREATE INDEX IF NOT EXISTS idx_auctions_pi ON auctions(payment_intent_id);
 
 CREATE TABLE IF NOT EXISTS bids (
   auction_id TEXT NOT NULL REFERENCES auctions(id),

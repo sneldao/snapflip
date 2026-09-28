@@ -12,14 +12,19 @@ export function stripe(env: Env): Stripe {
 
 const stubMode = (env: Env) => !env.STRIPE_SECRET_KEY;
 
+/** Seller gets 2h to confirm purchase before the card hold is released. */
+const AUTH_HOLD_MS = 2 * 60 * 60 * 1000;
+
 type AuctionRow = {
   id: string; status: string; clearing_cents: number | null; payment_intent_id: string | null;
-  seller_id: string; stripe_account_id: string | null; buyer_id: string | null; title: string;
+  winner_order_id: string | null; seller_id: string; stripe_account_id: string | null;
+  buyer_id: string | null; title: string;
 };
 
 async function loadAuction(env: Env, auctionId: string): Promise<AuctionRow | null> {
   return env.DB.prepare(
-    `SELECT a.id, a.status, a.clearing_cents, a.payment_intent_id, sn.seller_id, se.stripe_account_id, o.buyer_id,
+    `SELECT a.id, a.status, a.clearing_cents, a.payment_intent_id, a.winner_order_id,
+            sn.seller_id, se.stripe_account_id, o.buyer_id,
             COALESCE(sk.title, 'item') AS title
        FROM auctions a JOIN snaps sn ON sn.id = a.snap_id JOIN sellers se ON se.id = sn.seller_id
        LEFT JOIN orders o ON o.id = a.winner_order_id LEFT JOIN skus sk ON sk.id = sn.sku_id
@@ -97,6 +102,45 @@ export async function release(env: Env, auctionId: string): Promise<void> {
   await notify(env, { sellerId: a.seller_id }, { type: "released", auctionId, amountCents: amount });
 }
 
+/**
+ * Void an authorization that never got a seller confirm: cancel the PaymentIntent (frees the
+ * card hold), reopen the winning order so it can bid again, and lower the seller's reliability.
+ */
+export async function voidAuthorization(env: Env, auctionId: string): Promise<void> {
+  const a = await loadAuction(env, auctionId);
+  if (!a || a.status !== "settled" || !a.payment_intent_id) throw new Error("auction not voidable");
+  if (!stubMode(env)) await stripe(env).paymentIntents.cancel(a.payment_intent_id, {}, { idempotencyKey: `void_${auctionId}` });
+  await env.DB.batch([
+    env.DB.prepare("UPDATE auctions SET status = 'expired' WHERE id = ?").bind(auctionId),
+    env.DB.prepare("UPDATE orders SET status = 'open' WHERE id = ? AND status = 'filled'").bind(a.winner_order_id ?? ""),
+    env.DB.prepare("UPDATE sellers SET reliability = MAX(0.0, reliability - 0.2) WHERE id = ?").bind(a.seller_id),
+  ]);
+  await notify(env, { sellerId: a.seller_id }, { type: "no_sale", auctionId, title: a.title });
+}
+
+/** Dispute / not-as-described: refund the captured payment. Only valid before the payout transfer. */
+export async function refund(env: Env, auctionId: string): Promise<void> {
+  const a = await loadAuction(env, auctionId);
+  if (!a || a.status !== "captured" || !a.payment_intent_id) throw new Error("auction not refundable");
+  if (!stubMode(env)) await stripe(env).refunds.create({ payment_intent: a.payment_intent_id }, { idempotencyKey: `refund_${auctionId}` });
+  await env.DB.prepare("UPDATE auctions SET status = 'refunded' WHERE id = ?").bind(auctionId).run();
+}
+
+/** Cron sweep: void auths where the seller never confirmed within the hold window. */
+export async function voidExpiredAuths(env: Env): Promise<void> {
+  const cutoff = new Date(Date.now() - AUTH_HOLD_MS).toISOString();
+  const { results } = await env.DB.prepare(
+    "SELECT id FROM auctions WHERE status = 'settled' AND COALESCE(ended_at, started_at) < ?",
+  ).bind(cutoff).all<{ id: string }>();
+  for (const { id } of results) {
+    try {
+      await voidAuthorization(env, id);
+    } catch (e) {
+      console.error("voidExpiredAuths failed", id, (e as Error).message);
+    }
+  }
+}
+
 export const payments = new Hono<App>();
 
 /** Buyer payment limit. Fallback path: Checkout in setup mode saves a card; cap enforced in settleAuction. */
@@ -167,5 +211,15 @@ payments.post("/api/auctions/:id/shipped", requireApiKey, async (c) => {
 
 payments.post("/api/auctions/:id/delivered", requireApiKey, async (c) => {
   await release(c.env, c.req.param("id"));
+  return c.json({ ok: true });
+});
+
+payments.post("/api/auctions/:id/cancel", requireApiKey, async (c) => {
+  await voidAuthorization(c.env, c.req.param("id"));
+  return c.json({ ok: true });
+});
+
+payments.post("/api/auctions/:id/refund", requireApiKey, async (c) => {
+  await refund(c.env, c.req.param("id"));
   return c.json({ ok: true });
 });
