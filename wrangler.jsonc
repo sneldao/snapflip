@@ -36,6 +36,7 @@
     "ENVIRONMENT": "production",
     "PUBLIC_URL": "https://go.snapflip.workers.dev",
     "CLAUDE_MODEL": "claude-sonnet-4-5",
+    "TELEGRAM_BOT_USERNAME": "snapflipbot",
     "SELLER_FEE_BPS": "1000"
   }
 }
