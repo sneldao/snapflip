@@ -90,3 +90,11 @@ CREATE TABLE IF NOT EXISTS bids (
   at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 CREATE INDEX IF NOT EXISTS idx_bids_auction ON bids(auction_id);
+
+-- Model response cache. Key = SHA-256(system prompt + request content), so a
+-- webhook retry or a seller re-sending the same photo replays at zero tokens.
+CREATE TABLE IF NOT EXISTS llm_cache (
+  key TEXT PRIMARY KEY,
+  response TEXT NOT NULL,                  -- the JSON object the model returned
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);

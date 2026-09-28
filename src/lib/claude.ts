@@ -36,16 +36,31 @@ function extractJson<T>(text: string): T {
   return JSON.parse(text.slice(start, end + 1)) as T;
 }
 
+// Hard cap per provider attempt so a hung API fails fast into the fallback
+// instead of stalling the request (and re-paying the full input on the retry).
+const PROVIDER_TIMEOUT_MS = 20_000;
+
 async function anthropicJson<T>(
   env: Env,
   opts: { system: string; content: Anthropic.MessageParam["content"]; maxTokens?: number },
 ): Promise<T> {
-  const res = await claude(env).messages.create({
-    model: env.CLAUDE_MODEL,
-    max_tokens: opts.maxTokens ?? 1024,
-    system: `${opts.system}\n\nRespond with a single JSON object and nothing else.`,
-    messages: [{ role: "user", content: opts.content }],
-  });
+  const res = await claude(env).messages.create(
+    {
+      model: env.CLAUDE_MODEL,
+      max_tokens: opts.maxTokens ?? 1024,
+      // Ephemeral prompt caching: the catalog prefix in the system prompt is
+      // stable across calls, so repeat reads bill at ~10% of input price.
+      system: [
+        {
+          type: "text",
+          text: `${opts.system}\n\nRespond with a single JSON object and nothing else.`,
+          cache_control: { type: "ephemeral" },
+        },
+      ],
+      messages: [{ role: "user", content: opts.content }],
+    },
+    { timeout: PROVIDER_TIMEOUT_MS },
+  );
   const text = res.content.map((b) => (b.type === "text" ? b.text : "")).join("");
   return extractJson(text);
 }
@@ -68,18 +83,23 @@ async function featherlessJson<T>(
         { role: "user", content: toOpenAIContent(opts.content) },
       ],
     }),
+    signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS),
   });
   if (!res.ok) throw new Error(`featherless ${res.status}: ${(await res.text()).slice(0, 200)}`);
   const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
   return extractJson(data.choices?.[0]?.message?.content ?? "");
 }
 
-/**
- * Ask a model for a JSON object. The system prompt must describe the exact shape.
- * Provider order: Anthropic → Featherless (OpenAI-compatible). A failed primary call
- * falls through to the next provider rather than failing the request.
- */
-export async function claudeJson<T>(
+/** SHA-256 of the full request — two identical asks (same system + content) share one response. */
+async function requestHash(opts: { system: string; content: ContentBlock[] }): Promise<string> {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(JSON.stringify([opts.system, opts.content])),
+  );
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function callProvider<T>(
   env: Env,
   opts: { system: string; content: ContentBlock[]; maxTokens?: number },
 ): Promise<T> {
@@ -92,4 +112,36 @@ export async function claudeJson<T>(
   }
   if (env.FEATHERLESS_API_KEY) return featherlessJson(env, opts);
   throw new Error("no model provider configured (need ANTHROPIC_API_KEY or FEATHERLESS_API_KEY)");
+}
+
+/**
+ * Ask a model for a JSON object. The system prompt must describe the exact shape.
+ * Provider order: Anthropic → Featherless (OpenAI-compatible). A failed primary call
+ * falls through to the next provider rather than failing the request.
+ *
+ * Responses are cached in D1 keyed on the request hash: identical requests (photo
+ * re-sends, webhook retries, repeated order text) replay at zero token cost.
+ */
+export async function claudeJson<T>(
+  env: Env,
+  opts: { system: string; content: ContentBlock[]; maxTokens?: number },
+): Promise<T> {
+  const key = await requestHash(opts);
+  try {
+    const hit = await env.DB.prepare("SELECT response FROM llm_cache WHERE key = ?").bind(key).first<{ response: string }>();
+    if (hit) return JSON.parse(hit.response) as T;
+  } catch {
+    // Cache read failure must never block a live call.
+  }
+
+  const out = await callProvider<T>(env, opts);
+
+  try {
+    await env.DB.prepare("INSERT OR IGNORE INTO llm_cache (key, response) VALUES (?, ?)")
+      .bind(key, JSON.stringify(out))
+      .run();
+  } catch {
+    // Cache write failure must never fail the call.
+  }
+  return out;
 }
