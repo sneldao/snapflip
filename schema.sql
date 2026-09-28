@@ -98,3 +98,17 @@ CREATE TABLE IF NOT EXISTS llm_cache (
   response TEXT NOT NULL,                  -- the JSON object the model returned
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
+
+-- Sellers who asked to be pinged when demand appears for something they snapped.
+-- sku_id set when the find is catalogued; otherwise matched by normalized title.
+CREATE TABLE IF NOT EXISTS watches (
+  id TEXT PRIMARY KEY,
+  seller_id TEXT NOT NULL REFERENCES sellers(id),
+  snap_id TEXT REFERENCES snaps(id),
+  sku_id TEXT REFERENCES skus(id),
+  title TEXT NOT NULL,
+  active INTEGER NOT NULL DEFAULT 0,   -- 0 = offered, 1 = seller tapped "ping me"
+  notified_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+CREATE INDEX IF NOT EXISTS idx_watches_open ON watches(active, notified_at);

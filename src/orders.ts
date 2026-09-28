@@ -5,6 +5,7 @@ import { buyerAgent } from "./buyer";
 import { claudeJson, llmAvailable } from "./lib/claude";
 import { CONDITION_FLAGS, knownFlags } from "./lib/flags";
 import { newId, requireApiKey, type App } from "./lib/util";
+import { pingWatchers } from "./watches";
 import type { Env, Grade, Order, OrderRules } from "./types";
 
 export const CreateOrderInput = z.object({
@@ -116,6 +117,8 @@ export async function createOrder(env: Env, input: CreateOrderInput): Promise<Or
     ),
     ...rules.skuIds.map((sku) => env.DB.prepare("INSERT INTO order_skus (order_id, sku_id) VALUES (?, ?)").bind(id, sku)),
   ]);
+  // Ping any seller watching for this demand — must never fail the order itself.
+  await pingWatchers(env, { buyerId: input.buyerId, skuIds: rules.skuIds }).catch((e) => console.error("pingWatchers failed", e));
   return (await getOrder(env, id))!;
 }
 

@@ -7,6 +7,7 @@ import { capture, release } from "./payments";
 import { grade, identify } from "./vision";
 import { newId, safeEqual, usd, type App } from "./lib/util";
 import type { Env, Identification, NotifyEvent, NotifyTarget, Snap } from "./types";
+import { nearbyDemand, offerWatch, ordinal, snapsToday } from "./watches";
 
 // Below this identification confidence, ask the seller to pick from Claude's top matches
 // instead of guessing — a wrong SKU would start an auction against the wrong buyers.
@@ -29,7 +30,7 @@ interface TgUpdate {
 }
 type Buttons = { text: string; callback_data?: string; url?: string }[][];
 
-const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+export const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
 export async function tg<T = unknown>(env: Env, method: string, body: Record<string, unknown>): Promise<T> {
   // No token (local dev): no-op instead of hitting the real API, so callbacks don't crash.
@@ -159,6 +160,27 @@ function identifyOptions(id: Identification): { skuId: string; title: string }[]
   return out;
 }
 
+/** The two no-buyer outcomes share one tail: at most one honest line from our own data,
+ *  plus a "ping me" button that arms a watch (active=0 until tapped). */
+async function noBuyerExtras(env: Env, sellerId: string, snapId: string, skuId: string | null, title: string): Promise<{ line: string; buttons: Buttons }> {
+  let line = "";
+  const near = await nearbyDemand(env, title, skuId ?? undefined);
+  if (near) {
+    line = `\nBut <b>${near.collectors} collector${near.collectors === 1 ? "" : "s"}</b> ${near.collectors === 1 ? "is" : "are"} hunting ${near.titles.map(esc).join(" and ")}.`;
+  } else {
+    const n = await snapsToday(env, sellerId);
+    if (n >= 2) line = `\n${ordinal(n)} snap today — keep them coming.`;
+  }
+  const watchId = await offerWatch(env, { sellerId, snapId, skuId, title });
+  return {
+    line,
+    buttons: [
+      [{ text: "Ping me if someone hunts it", callback_data: `watch:${watchId}` }],
+      [{ text: "What's in demand", url: `${env.PUBLIC_URL}/` }],
+    ],
+  };
+}
+
 /** Photos arrive as compressed `photo` (always JPEG) or, when sent as a file, as an image `document`. */
 async function handlePhoto(env: Env, chatId: number, fileId: string, mediaType: ImageType): Promise<void> {
   const statusId = await send(env, chatId, "&gt; reading label…");
@@ -207,12 +229,13 @@ async function readSnap(env: Env, chatId: number, fileId: string, mediaType: Ima
   // A confident read of an item we don't list is a catalog gap, not a bad photo — say what we saw.
   const demand: Buttons = [[{ text: "What's in demand", url: `${env.PUBLIC_URL}/` }]];
   if (id.title && id.confidence >= CONFIDENCE_THRESHOLD) {
+    const extras = await noBuyerExtras(env, sellerId, snapId, id.skuId ?? null, id.title);
     await edit(
       env,
       chatId,
       statusId,
-      `Nice find — <b>${esc(id.title)}</b>.${remark}\n\nNo agents are hunting this one on SnapFlip yet, so there's no buyer waiting today.\n▸ Snap the next cart — or see what collectors are hunting.`,
-      demand,
+      `Nice find — <b>${esc(id.title)}</b>.${remark}\n\nNo agents are hunting this one yet.${extras.line}\n▸ Snap the next cart, or tap below and I'll ping you if a collector starts looking.`,
+      extras.buttons,
     );
     return;
   }
@@ -253,15 +276,16 @@ async function finalizeIdentification(env: Env, chatId: number, snapId: string, 
   };
   const eligible = (await findCandidates(env, snap)).filter((v) => v.eligible).length;
   // Don't reveal bid amounts: they're private to each buyer agent.
-  await edit(
-    env,
-    chatId,
-    statusMsgId,
-    `<b>${esc(title)}</b> · grade ${g.grade}${aside}\n${esc(g.notes)}\n\n` +
-      (eligible
-        ? `<b>${eligible} buyer agent${eligible === 1 ? "" : "s"}</b> ready to bid.\n▸ Reply with a floor price (e.g. <code>10</code>) to open a 60s auction.`
-        : `No standing orders for this one yet.\n▸ Leave it on the rack — or <a href="${esc(env.PUBLIC_URL)}/">see what's in demand</a>.`),
-  );
+  let buttons: Buttons | undefined;
+  let tail: string;
+  if (eligible) {
+    tail = `<b>${eligible} buyer agent${eligible === 1 ? "" : "s"}</b> ready to bid.\n▸ Reply with a floor price (e.g. <code>10</code>) to open a 60s auction.`;
+  } else {
+    const extras = await noBuyerExtras(env, row.seller_id, snapId, skuId, title);
+    tail = `No standing orders for this one yet.${extras.line}\n▸ Snap the next cart, or tap below and I'll ping you if a collector starts looking.`;
+    buttons = extras.buttons;
+  }
+  await edit(env, chatId, statusMsgId, `<b>${esc(title)}</b> · grade ${g.grade}${aside}\n${esc(g.notes)}\n\n${tail}`, buttons);
 }
 
 async function handleReserve(env: Env, msg: TgMessage, dollars: number): Promise<void> {
@@ -301,6 +325,7 @@ async function handleUpdate(env: Env, u: TgUpdate): Promise<void> {
       delivered: "Releasing payout…",
       raise: "Raising your max…",
       pick: "Got it — grading…",
+      watch: "Watching — I'll ping you",
     };
     await tg(env, "answerCallbackQuery", { callback_query_id: u.callback_query.id, text: toasts[action] });
     let stripped = false;
@@ -325,6 +350,16 @@ async function handleUpdate(env: Env, u: TgUpdate): Promise<void> {
         const [, snapId, skuId] = parts;
         const sku = await env.DB.prepare("SELECT title FROM skus WHERE id = ?").bind(skuId).first<{ title: string }>();
         if (chatId && sku) await finalizeIdentification(env, chatId, snapId, skuId, sku.title, cbMsg?.message_id);
+      } else if (action === "watch") {
+        // Seller armed a "ping me" watch; swap the keyboard for just the demand link.
+        await env.DB.prepare("UPDATE watches SET active = 1 WHERE id = ?").bind(parts[1]).run();
+        if (cbMsg) {
+          await tg(env, "editMessageReplyMarkup", {
+            chat_id: cbMsg.chat.id,
+            message_id: cbMsg.message_id,
+            reply_markup: { inline_keyboard: [[{ text: "What's in demand", url: `${env.PUBLIC_URL}/` }]] },
+          }).catch(() => {});
+        }
       }
     } catch (e) {
       // Put the original keyboard back before apologizing so the tap can be retried.
