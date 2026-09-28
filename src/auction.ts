@@ -4,6 +4,7 @@ import { Hono } from "hono";
 import { findCandidates } from "./match";
 import { settleAuction } from "./payments";
 import { notify } from "./telegram";
+import { pushLive } from "./live-tg";
 import { PLATFORM_FEES_DDL, feeLedgerRow, sellerFeeBps, splitFee } from "./lib/fees";
 import { devOnly, newId, nowIso, requireApiKey, type App } from "./lib/util";
 import type { AuctionStatus, AuctionView, BidEvent, Env, Snap, Valuation } from "./types";
@@ -290,8 +291,15 @@ export class AuctionDO extends DurableObject<Env> {
     await notify(this.env, { sellerId: s.sellerId }, { type: "presold", auctionId: s.id, title: s.title, priceCents: result.priceCents, netCents });
   }
 
+  private liveSeen = { dropped: -1, closing: false };
+
   private broadcast(s: State): void {
-    const msg = JSON.stringify(this.view(s));
+    const view = this.view(s);
+    const msg = JSON.stringify(view);
+    // Mirror into the seller's chat; drops, soft-close and the end always push through the throttle.
+    const force = view.dropped.length !== this.liveSeen.dropped || view.closing !== this.liveSeen.closing || view.status !== "live";
+    this.liveSeen = { dropped: view.dropped.length, closing: view.closing === true };
+    this.ctx.waitUntil(pushLive(this.env, s.id, view, force));
     for (const ws of this.ctx.getWebSockets()) {
       try {
         ws.send(msg);
@@ -368,6 +376,21 @@ export async function startAuction(env: Env, snap: Snap, reserveCents: number): 
 export const auctions = new Hono<App>();
 
 auctions.get("/a/:id/ws", (c) => auctionStub(c.env, c.req.param("id")).fetch(c.req.raw));
+
+/** Seller's in-hand proof photo, sent before the buyer's card is captured. */
+auctions.get("/a/:id/proof", async (c) => {
+  const row = await c.env.DB.prepare("SELECT proof_r2_key FROM auctions WHERE id = ?")
+    .bind(c.req.param("id"))
+    .first<{ proof_r2_key: string | null }>();
+  if (!row?.proof_r2_key) return c.notFound();
+  const obj = await c.env.PHOTOS.get(row.proof_r2_key);
+  if (!obj) return c.notFound();
+  const headers = new Headers();
+  obj.writeHttpMetadata(headers);
+  if (!headers.has("content-type")) headers.set("content-type", "image/jpeg");
+  headers.set("etag", obj.httpEtag);
+  return new Response(obj.body, { headers });
+});
 
 /** Photo of the snapped item, streamed from R2 for the live auction page. */
 auctions.get("/a/:id/photo", async (c) => {

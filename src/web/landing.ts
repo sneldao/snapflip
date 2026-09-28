@@ -559,7 +559,7 @@ landing.get("/", async (c) => {
         <p>One photo at the rack. No listing, no fee, no hauling duds home.</p>
       </div></section>
       <section class="tour-beat" id="t3"><div class="beat-card">
-        <div class="k">02 · Claude IDs + grades</div>
+        <div class="k">02 · AI IDs + grades</div>
         <h2>gb-pokemon-yellow-us · conf 0.97</h2>
         <p>Grade B “light label wear” · not a repro. Repros are hard-rejected.</p>
         <div class="big" id="stage-price">$6</div>
@@ -750,7 +750,7 @@ landing.get("/", async (c) => {
       </div>
       <p class="eyebrow">◉ Startup Speedrun · live demo · real money</p>
       <h1>Tell an agent what you're hunting. <span class="glow">It wins it for you.</span></h1>
-      <p class="lede">Set your max once — your agent bids every matching thrift find on a 60-second clock and never goes a dollar over. <span class="muted">Resellers snap the rack on Telegram; Claude IDs and grades it; the seller only buys the item once your agent has already won it.</span></p>
+      <p class="lede">Set your max once — your agent bids every matching thrift find on a 60-second clock and never goes a dollar over. <span class="muted">Resellers snap the rack on Telegram; AI vision IDs and grades it; the seller only buys the item once your agent has already won it.</span></p>
       <div class="proof-strip">
         <div class="proof amber"><b>$6 → $38</b><span>simulated example · seller nets $34.20</span></div>
         <div class="proof"><b>60s</b><span>ascending clock · reserve + $2 ticks · no sniping</span></div>
@@ -831,7 +831,7 @@ landing.get("/", async (c) => {
           <div class="step"><span class="num">01</span><strong>Set — 40s</strong>
             <span class="muted">Tell your agent the exact cart + max. Grade caps optional (“won't buy below B”). Never goes over.</span></div>
           <div class="step"><span class="num">02</span><strong>Snap — 10s</strong>
-            <span class="muted">Reseller snaps it on Telegram at the rack. Claude IDs the SKU, grades condition, rejects repros.</span></div>
+            <span class="muted">Reseller snaps it on Telegram at the rack. AI vision IDs the SKU and grades condition; the engine rejects repros.</span></div>
           <div class="step"><span class="num">03</span><strong>Sold — 60s</strong>
             <span class="muted">Matching agents bid on a live clock. Seller sees the price before paying. Buyer pays clearing, not max.</span></div>
         </div>
@@ -891,7 +891,7 @@ landing.get("/", async (c) => {
         <h2>Fair questions</h2>
         <details open><summary>What if nobody bids?</summary><p>You walk away. No listing, no fee, no dead inventory. The snap cost you 10 seconds.</p></details>
         <details><summary>When is my card actually charged?</summary><p>Only after the seller buys the item and confirms with a photo. Before that it's just an authorization hold at the clearing price — never your max.</p></details>
-        <details><summary>What stops fakes?</summary><p>Claude checks every snap for repro tells and the auction engine hard-rejects flagged items. Grade caps let buyers auto-skip rough copies.</p></details>
+        <details><summary>What stops fakes?</summary><p>AI vision checks every snap for repro tells, and the auction engine hard-rejects anything flagged. Grade caps let buyers auto-skip rough copies.</p></details>
         <details><summary>Do I need Telegram / Claude?</summary><p>Resellers live on Telegram. Collectors can use the web, Claude (MCP connector), or the Brainbase concierge — same order book.</p></details>
         <details><summary>Is there a subscription?</summary><p>Collecting is free. Buyer Plus ($6/mo) wins the tie-breaks when two maxes collide. Sellers never pay to list — 10% only when it sells.</p></details>
         <details><summary>How fast do sellers get paid?</summary><p>Standard payout lands on delivery, free. Trusted sellers can cash out at confirm time with express (−1% rush).</p></details>
@@ -911,7 +911,7 @@ landing.get("/", async (c) => {
       </div>
       <div style="display:none"><span id="demand-top">$0</span><span id="collectors-top">0</span><span id="tx-top">0</span></div>
       ${soonRail}
-      <p class="foot muted"><span class="blabel">Built with</span>Anthropic Claude · Cloudflare Workers, D1, R2, Durable Objects · Stripe Connect · Brainbase<br />Built at Startup Speedrun.</p>
+      <p class="foot muted"><span class="blabel">Built with</span>Anthropic Claude · Featherless · Cloudflare Workers, D1, R2, Durable Objects · Stripe Connect · Brainbase<br />Built at Startup Speedrun.</p>
       ${tapeScript}
       ${statsScript}`,
       { image: `${c.env.PUBLIC_URL}/og.png` },
@@ -947,7 +947,7 @@ landing.get("/sell", (c) => {
         <h2>At the rack</h2>
         <div class="steps">
           <div class="step"><span class="num">01</span><strong>Snap — 10s</strong>
-            <span class="muted">Send one photo to the bot. Claude IDs the exact item and grades it on the spot.</span></div>
+            <span class="muted">Send one photo to the bot. AI vision IDs the exact item and grades it on the spot.</span></div>
           <div class="step"><span class="num">02</span><strong>Watch — 60s</strong>
             <span class="muted">Collector agents bid on a live clock, right in the chat. You see every tick.</span></div>
           <div class="step"><span class="num">03</span><strong>Decide</strong>

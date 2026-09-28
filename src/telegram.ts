@@ -36,7 +36,7 @@ export const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;")
 export async function tg<T = unknown>(env: Env, method: string, body: Record<string, unknown>): Promise<T> {
   // No token (local dev): no-op instead of hitting the real API, so callbacks don't crash.
   if (!env.TELEGRAM_BOT_TOKEN) {
-    console.log(`[tg stub] ${method}`);
+    console.log(`[tg stub] ${method}${typeof body.text === "string" ? ` → ${body.text}` : ""}`);
     return {} as T;
   }
   const res = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/${method}`, {
@@ -89,8 +89,8 @@ export async function typing(env: Env, chatId: string | number): Promise<void> {
 /** HANDOFF B, C → A. Every user-facing message goes through here. */
 export async function notify(env: Env, to: NotifyTarget, event: NotifyEvent): Promise<void> {
   const row = to.buyerId
-    ? await env.DB.prepare("SELECT tg_chat_id FROM buyers WHERE id = ?").bind(to.buyerId).first<{ tg_chat_id: string | null }>()
-    : await env.DB.prepare("SELECT tg_chat_id FROM sellers WHERE id = ?").bind(to.sellerId ?? "").first<{ tg_chat_id: string | null }>();
+    ? await env.DB.prepare("SELECT tg_chat_id, NULL AS stripe_account_id FROM buyers WHERE id = ?").bind(to.buyerId).first<{ tg_chat_id: string | null; stripe_account_id: string | null }>()
+    : await env.DB.prepare("SELECT tg_chat_id, stripe_account_id FROM sellers WHERE id = ?").bind(to.sellerId ?? "").first<{ tg_chat_id: string | null; stripe_account_id: string | null }>();
   const chatId = row?.tg_chat_id;
   const link = (id: string) => `${env.PUBLIC_URL}/a/${id}`;
 
@@ -114,6 +114,7 @@ export async function notify(env: Env, to: NotifyTarget, event: NotifyEvent): Pr
     case "presold":
       text = `<code>SOLD ${usd(event.priceCents)}</code> · ${esc(event.title)}\nCleared at ${usd(event.priceCents)} (incl. ${usd(event.priceCents - event.netCents)} SnapFlip fee) — you net <b>${usd(event.netCents)}</b>.\n▸ Grab it off the rack, then tap below.`;
       buttons = [[{ text: "I bought it", callback_data: `confirm:${event.auctionId}` }]];
+      if (to.sellerId && !row?.stripe_account_id) buttons.push(payoutsButton(env, to.sellerId));
       break;
     case "no_sale":
       text = `<code>NO SALE</code> · ${esc(event.title)}\nNothing cleared your floor. Leave it on the rack — no harm done.`;
@@ -122,7 +123,8 @@ export async function notify(env: Env, to: NotifyTarget, event: NotifyEvent): Pr
       text = `<code>NO SALE</code> · ${esc(event.title)}\nIt cleared your floor, but no payment went through (${esc(event.reason)}). Nobody was charged.\n▸ Snap it again to re-list.`;
       break;
     case "captured":
-      text = `<code>CAPTURED ${usd(event.priceCents)}</code> · ${esc(event.title)}\nThe seller has it. Your card was charged.`;
+      text = `<code>CAPTURED ${usd(event.priceCents)}</code> · ${esc(event.title)}\nThe seller has it in hand. Your card was charged.`;
+      buttons = [[{ text: "See the seller's photo", url: `${env.PUBLIC_URL}/a/${event.auctionId}/proof` }]];
       break;
     case "shipped":
       text = `<code>SHIPPED</code> · ${esc(event.title)}\nTracking <code>${esc(event.tracking)}</code>`;
@@ -195,8 +197,7 @@ async function handlePhoto(env: Env, chatId: number, fileId: string, mediaType: 
 
 async function readSnap(env: Env, chatId: number, fileId: string, mediaType: ImageType, statusId: number | undefined): Promise<void> {
   const sellerId = await upsertSeller(env, chatId);
-  const file = await tg<{ file_path: string }>(env, "getFile", { file_id: fileId });
-  const photo = await (await fetch(`https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${file.file_path}`)).arrayBuffer();
+  const photo = await downloadTgFile(env, fileId);
   const snapId = newId("sn");
   const r2Key = `snaps/${snapId}.${mediaType.split("/")[1].replace("jpeg", "jpg")}`;
   await env.PHOTOS.put(r2Key, photo, { httpMetadata: { contentType: mediaType } });
@@ -309,9 +310,68 @@ async function handleReserve(env: Env, msg: TgMessage, dollars: number): Promise
     gradeNotes: row.grade_notes as string, flags: JSON.parse(row.flags_json as string), rackCents: null, reserveCents,
   };
   const { auctionId, view } = await startAuction(env, snap, reserveCents);
-  await send(env, msg.chat.id, `<code>LIVE</code> 60s auction · <b>${view.active.length} agents</b> bidding on ${esc(row.title as string)}.`, [
+  const liveId = await send(env, msg.chat.id, `<code>LIVE</code> 60s auction · <b>${view.active.length} agents</b> bidding on ${esc(row.title as string)}.`, [
     [{ text: "Watch it climb", url: `${env.PUBLIC_URL}/a/${auctionId}` }],
   ]);
+  // The auction edits this message in place as the price climbs (src/live-tg.ts).
+  if (liveId) {
+    await env.DB.prepare("UPDATE auctions SET tg_chat_id = ?, tg_message_id = ? WHERE id = ?")
+      .bind(String(msg.chat.id), liveId, auctionId).run();
+  }
+}
+
+const payoutsButton = (env: Env, sellerId: string) => [{ text: "Set up payouts (2 min)", url: `${env.PUBLIC_URL}/sell/onboard?seller=${sellerId}` }];
+
+async function downloadTgFile(env: Env, fileId: string): Promise<ArrayBuffer> {
+  const file = await tg<{ file_path: string }>(env, "getFile", { file_id: fileId });
+  return (await fetch(`https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${file.file_path}`)).arrayBuffer();
+}
+
+/** The sale this chat's seller owes a proof photo for, if any ("I bought it" tapped, not yet captured). */
+async function pendingProof(env: Env, chatId: number): Promise<string | null> {
+  const r = await env.DB.prepare(
+    `SELECT a.id FROM auctions a JOIN snaps sn ON sn.id = a.snap_id JOIN sellers se ON se.id = sn.seller_id
+      WHERE se.tg_chat_id = ? AND a.status = 'settled' AND a.proof_requested_at IS NOT NULL AND a.proof_r2_key IS NULL
+      ORDER BY a.proof_requested_at DESC LIMIT 1`,
+  ).bind(String(chatId)).first<{ id: string }>();
+  return r?.id ?? null;
+}
+
+/** Proof photo landed: store it, capture the buyer's card, then the usual post-capture choices. */
+async function handleProof(env: Env, chatId: number, auctionId: string, fileId: string, mediaType: ImageType): Promise<void> {
+  const statusId = await send(env, chatId, "&gt; got the photo — charging the buyer…");
+  const key = `proofs/${auctionId}.${mediaType.split("/")[1].replace("jpeg", "jpg")}`;
+  try {
+    await env.PHOTOS.put(key, await downloadTgFile(env, fileId), { httpMetadata: { contentType: mediaType } });
+    // Key first so the buyer's CAPTURED ping can already link to the photo; a failed capture leaves
+    // status 'settled', so the seller can simply send the photo again.
+    await env.DB.prepare("UPDATE auctions SET proof_r2_key = ? WHERE id = ?").bind(key, auctionId).run();
+    await capture(env, auctionId);
+  } catch (e) {
+    await env.DB.prepare("UPDATE auctions SET proof_r2_key = NULL WHERE id = ? AND status = 'settled'").bind(auctionId).run();
+    await edit(env, chatId, statusId, `Couldn't charge the buyer: ${esc((e as Error).message)}\n▸ Send the photo again.`);
+    return;
+  }
+  await edit(env, chatId, statusId, "<code>PROOF</code> Photo received — the buyer can see it.");
+  await afterCapture(env, chatId, auctionId);
+}
+
+/** Post-capture seller message: express payout for trusted sellers, otherwise ship-then-deliver. */
+async function afterCapture(env: Env, chatId: number, auctionId: string): Promise<void> {
+  // Trusted sellers get the express choice: cash out now (−1% rush) or on delivery (free).
+  const snap = await env.DB.prepare(
+    `SELECT sn.seller_id, a.clearing_cents FROM auctions a JOIN snaps sn ON sn.id = a.snap_id WHERE a.id = ?`,
+  ).bind(auctionId).first<{ seller_id: string; clearing_cents: number | null }>();
+  if (snap && (await expressEligible(env, snap.seller_id))) {
+    const { netCents } = splitFee(snap.clearing_cents ?? 0, sellerFeeBps(env));
+    const { expressFeeCents, payoutCents } = splitExpress(netCents, expressFeeBps(env));
+    await send(env, chatId, `<code>CAPTURED</code> Payment's in. Ship it — or skip the wait:\n⚡ Express payout <b>${usd(payoutCents)}</b> now (−${usd(expressFeeCents)} rush).`, [
+      [{ text: `⚡ Express ${usd(payoutCents)}`, callback_data: `express:${auctionId}` }],
+      [{ text: "Delivered (demo)", callback_data: `delivered:${auctionId}` }],
+    ]);
+  } else {
+    await send(env, chatId, "<code>CAPTURED</code> Payment's in. Ship it, then tap below.", [[{ text: "Delivered (demo)", callback_data: `delivered:${auctionId}` }]]);
+  }
 }
 
 async function handleUpdate(env: Env, u: TgUpdate): Promise<void> {
@@ -322,7 +382,7 @@ async function handleUpdate(env: Env, u: TgUpdate): Promise<void> {
     const chatId = cbMsg?.chat.id;
     // Answer first so the button stops spinning, then strip the keyboard so nothing is double-tapped.
     const toasts: Record<string, string> = {
-      confirm: "Capturing payment…",
+      confirm: "Send the proof photo…",
       delivered: "Releasing payout…",
       express: "Rushing payout…",
       raise: "Raising your max…",
@@ -337,22 +397,20 @@ async function handleUpdate(env: Env, u: TgUpdate): Promise<void> {
     }
     try {
       if (action === "confirm") {
-        await capture(env, parts[1]);
-        // Trusted sellers get the express choice: cash out now (−1% rush) or on delivery (free).
-        const snap = await env.DB.prepare(
-          `SELECT sn.seller_id, a.clearing_cents FROM auctions a JOIN snaps sn ON sn.id = a.snap_id WHERE a.id = ?`,
-        ).bind(parts[1]).first<{ seller_id: string; clearing_cents: number | null }>();
-        if (snap && (await expressEligible(env, snap.seller_id))) {
-          const { netCents } = splitFee(snap.clearing_cents ?? 0, sellerFeeBps(env));
-          const { expressFeeCents, payoutCents } = splitExpress(netCents, expressFeeBps(env));
-          if (chatId) {
-            await send(env, chatId, `<code>CAPTURED</code> Payment's in. Ship it — or skip the wait:\n⚡ Express payout <b>${usd(payoutCents)}</b> now (−${usd(expressFeeCents)} rush).`, [
-              [{ text: `⚡ Express ${usd(payoutCents)}`, callback_data: `express:${parts[1]}` }],
-              [{ text: "Delivered (demo)", callback_data: `delivered:${parts[1]}` }],
-            ]);
-          }
-        } else if (chatId) {
-          await send(env, chatId, "<code>CAPTURED</code> Payment's in. Ship it, then tap below.", [[{ text: "Delivered (demo)", callback_data: `delivered:${parts[1]}` }]]);
+        // No capture yet: the buyer is charged only once the in-hand proof photo lands (handleProof).
+        const own = await env.DB.prepare(
+          `SELECT se.id AS seller_id, se.stripe_account_id FROM auctions a JOIN snaps sn ON sn.id = a.snap_id JOIN sellers se ON se.id = sn.seller_id
+            WHERE a.id = ? AND a.status = 'settled' AND se.tg_chat_id = ?`,
+        ).bind(parts[1], String(chatId ?? "")).first<{ seller_id: string; stripe_account_id: string | null }>();
+        if (!own) throw new Error("that sale isn't waiting on you");
+        await env.DB.prepare("UPDATE auctions SET proof_requested_at = ? WHERE id = ?").bind(new Date().toISOString(), parts[1]).run();
+        if (chatId) {
+          await send(
+            env,
+            chatId,
+            "<code>PROOF</code> Send a photo of it in your hand — I charge the buyer the moment it lands.",
+            own.stripe_account_id ? undefined : [payoutsButton(env, own.seller_id)],
+          );
         }
       } else if (action === "express") {
         const { payoutCents } = await releaseExpress(env, parts[1]);
@@ -393,12 +451,16 @@ async function handleUpdate(env: Env, u: TgUpdate): Promise<void> {
 
   const msg = u.message;
   if (!msg) return;
-  if (msg.photo?.length) {
-    const largest = msg.photo.reduce((a, b) => (a.width * a.height > b.width * b.height ? a : b));
-    return handlePhoto(env, msg.chat.id, largest.file_id, "image/jpeg");
-  }
   const mime = msg.document?.mime_type ?? "";
-  if (msg.document && VISION_TYPES.includes(mime)) return handlePhoto(env, msg.chat.id, msg.document.file_id, mime as ImageType);
+  const image: { fileId: string; type: ImageType } | null = msg.photo?.length
+    ? { fileId: msg.photo.reduce((a, b) => (a.width * a.height > b.width * b.height ? a : b)).file_id, type: "image/jpeg" }
+    : msg.document && VISION_TYPES.includes(mime) ? { fileId: msg.document.file_id, type: mime as ImageType } : null;
+  if (image) {
+    // A seller who just tapped "I bought it" is sending proof, not a new snap.
+    const owed = await pendingProof(env, msg.chat.id);
+    if (owed) return handleProof(env, msg.chat.id, owed, image.fileId, image.type);
+    return handlePhoto(env, msg.chat.id, image.fileId, image.type);
+  }
   if (msg.sticker) {
     // Telegram turns .webp images into stickers on many clients.
     await send(env, msg.chat.id, "That arrived as a sticker — Telegram does that to .webp images.\n▸ Send it as a <b>photo</b>, or attach it as a <b>file</b>, and I'll read it.");

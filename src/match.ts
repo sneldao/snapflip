@@ -16,6 +16,8 @@ export function valueForOrder(
   const no = (reason: string): Valuation => ({ orderId, buyerId, eligible: false, dropoutCents: 0, limitCents, reason });
 
   if (!snap.skuId || !rules.skuIds.includes(snap.skuId)) return no("different item");
+  // Engine-level, not per-order: a flagged reproduction never reaches any buyer.
+  if (snap.flags.includes("reproduction")) return no("reproduction — auto-rejected");
   const rejected = snap.flags.find((f) => rules.reject.includes(f));
   if (rejected) return no(`rejected: ${rejected}`);
   const missing = rules.require.find((r) => !snap.flags.includes(r));

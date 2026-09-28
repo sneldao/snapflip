@@ -77,9 +77,18 @@ CREATE TABLE IF NOT EXISTS auctions (
   clearing_cents INTEGER,
   winner_order_id TEXT REFERENCES orders(id),
   payment_intent_id TEXT,
-  transfer_id TEXT
+  transfer_id TEXT,
+  proof_requested_at TEXT,                 -- seller tapped "I bought it"; waiting on the proof photo
+  proof_r2_key TEXT,                       -- seller's in-hand photo; capture happens only after it lands
+  tg_chat_id TEXT,                         -- seller's live-auction message, edited as the price climbs
+  tg_message_id INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_auctions_pi ON auctions(payment_intent_id);
+-- Migration for DBs created before the proof/live columns:
+-- ALTER TABLE auctions ADD COLUMN proof_requested_at TEXT;
+-- ALTER TABLE auctions ADD COLUMN proof_r2_key TEXT;
+-- ALTER TABLE auctions ADD COLUMN tg_chat_id TEXT;
+-- ALTER TABLE auctions ADD COLUMN tg_message_id INTEGER;
 
 CREATE TABLE IF NOT EXISTS bids (
   auction_id TEXT NOT NULL REFERENCES auctions(id),

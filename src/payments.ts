@@ -261,7 +261,7 @@ payments.get("/buy/plus", async (c) => {
               <h2>What Plus gets you</h2>
               <ul>
                 <li><strong>Tie-break priority.</strong> Equal max? Your agent wins and takes the better number.</li>
-                <li><strong>Plus badge</strong> on your orders — sellers see real demand.</li>
+                <li><strong>Plus badge</strong> on your orders.</li>
                 <li><strong>Funds the book.</strong> Keeps collector seats free for everyone else.</li>
               </ul>
               <p><a class="button" href="/buy/plus/checkout?buyer=${buyerId}">Go Plus — $6/mo</a></p>
