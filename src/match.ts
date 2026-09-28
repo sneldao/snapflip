@@ -72,6 +72,9 @@ Return {"eligible": boolean, "dropoutCents": integer (<= ${det.dropoutCents}), "
   }
 }
 
+// Max simultaneous verifyOne calls — bounds outbound model-call bursts per snap.
+const VERIFY_CONCURRENCY = 5;
+
 export async function findCandidates(env: Env, snap: Snap): Promise<Valuation[]> {
   if (!snap.skuId) return [];
   const { results } = await env.DB.prepare(
@@ -96,12 +99,22 @@ export async function findCandidates(env: Env, snap: Snap): Promise<Valuation[]>
 
   // Deterministic result is the source of truth for money. Claude only refines eligible matches.
   if (!llmAvailable(env)) return deterministic.map((d) => d.val);
-  return Promise.all(
-    deterministic.map((d) => (d.val.eligible ? verifyOne(env, snap, d.val, d.rulesText) : Promise.resolve(d.val))),
-  );
+
+  // Chunked fan-out: N standing orders on a hot SKU must not fire N concurrent model
+  // calls at a provider. Ineligible orders pass through untouched, order is preserved.
+  const verified = new Map<string, Valuation>();
+  const pending = deterministic.filter((d) => d.val.eligible);
+  for (let i = 0; i < pending.length; i += VERIFY_CONCURRENCY) {
+    await Promise.all(
+      pending.slice(i, i + VERIFY_CONCURRENCY).map(async (d) =>
+        verified.set(d.val.orderId, await verifyOne(env, snap, d.val, d.rulesText)),
+      ),
+    );
+  }
+  return deterministic.map((d) => verified.get(d.val.orderId) ?? d.val);
 }
 
-/** Queue consumer. TODO(B): move per-order Claude verification here when there are >5 candidates. */
+/** Queue consumer. Unused — verify fan-out is bounded by VERIFY_CONCURRENCY instead. */
 export async function handleMatchBatch(batch: MessageBatch<MatchJob>, _env: Env): Promise<void> {
   for (const msg of batch.messages) {
     console.log("match job", msg.body.snapId);
