@@ -159,6 +159,7 @@ export type NotifyEvent =
   | { type: "auction_won"; auctionId: string; title: string; priceCents: number }
   | { type: "presold"; auctionId: string; title: string; priceCents: number; netCents: number }
   | { type: "no_sale"; auctionId: string; title: string }
+  | { type: "settlement_failed"; auctionId: string; title: string; reason: string }
   | { type: "captured"; auctionId: string; title: string; priceCents: number }
   | { type: "shipped"; auctionId: string; title: string; tracking: string }
   | { type: "released"; auctionId: string; amountCents: number };

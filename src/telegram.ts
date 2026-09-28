@@ -1,6 +1,7 @@
 // Owner: A. Telegram bot (seller intake + all user-facing notifications).
 import { Hono } from "hono";
 import { startAuction } from "./auction";
+import { buyerAgent } from "./buyer";
 import { findCandidates } from "./match";
 import { capture, release } from "./payments";
 import { grade, identify } from "./vision";
@@ -58,10 +59,13 @@ export async function notify(env: Env, to: NotifyTarget, event: NotifyEvent): Pr
   let text: string;
   let buttons: Buttons | undefined;
   switch (event.type) {
-    case "agent_dropped":
-      // TODO(A): "Raise max" flow → buyerAgent(env, buyerId).raise(...)
+    case "agent_dropped": {
+      // One-tap override: offer to lift the order max 25% past the dropout point and rejoin.
+      const raiseToCents = Math.ceil((event.atCents * 1.25) / 100) * 100;
       text = `Your agent dropped out of ${event.title} at ${usd(event.atCents)} (${event.reason}). ${link(event.auctionId)}`;
+      buttons = [[{ text: `Raise max to ${usd(raiseToCents)} and rejoin`, callback_data: `raise:${event.auctionId}:${event.orderId}:${raiseToCents}` }]];
       break;
+    }
     case "auction_won":
       text = `Your agent won ${event.title} for ${usd(event.priceCents)}. Card authorized; you're charged when the seller confirms.`;
       break;
@@ -71,6 +75,9 @@ export async function notify(env: Env, to: NotifyTarget, event: NotifyEvent): Pr
       break;
     case "no_sale":
       text = `No sale on ${event.title}: nothing cleared your reserve. Leave it on the rack.`;
+      break;
+    case "settlement_failed":
+      text = `${event.title} cleared your reserve, but no payment went through (${event.reason}). No charge was made - snap the item again to re-list it.`;
       break;
     case "captured":
       text = `Seller has your ${event.title}. Charged ${usd(event.priceCents)}.`;
@@ -218,8 +225,14 @@ async function handleUpdate(env: Env, u: TgUpdate): Promise<void> {
         if (chatId) await send(env, chatId, "Payment captured. Ship it, then tap below.", [[{ text: "Delivered (demo)", callback_data: `delivered:${parts[1]}` }]]);
       } else if (action === "delivered") {
         await release(env, parts[1]);
+      } else if (action === "raise") {
+        // Buyer tapped "Raise max" on the dropout ping: raise:<auctionId>:<orderId>:<newMaxCents>
+        const [, auctionId, orderId, cents] = parts;
+        const order = await env.DB.prepare("SELECT buyer_id FROM orders WHERE id = ?").bind(orderId).first<{ buyer_id: string }>();
+        if (!order) throw new Error("unknown order");
+        const view = await buyerAgent(env, order.buyer_id).raise(order.buyer_id, auctionId, orderId, Number(cents));
+        if (chatId) await send(env, chatId, `Max raised to ${usd(Number(cents))}. Your agent is back in with ${view.active.length} agents still bidding. ${env.PUBLIC_URL}/a/${auctionId}`);
       } else if (action === "pick") {
-        // Seller chose a SKU from the low-confidence picker: pick:<snapId>:<skuId>
         const [, snapId, skuId] = parts;
         const sku = await env.DB.prepare("SELECT title FROM skus WHERE id = ?").bind(skuId).first<{ title: string }>();
         if (chatId && sku) await finalizeIdentification(env, chatId, snapId, skuId, sku.title);

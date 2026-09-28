@@ -74,7 +74,7 @@ At auction time, for each candidate order, Claude receives the photo, the grade 
 | `src/telegram.ts` | Seller and buyer bot messages, inline buttons, live auction message edits |
 | `src/mcp.ts` | Remote MCP server (`McpAgent`): buyer tools, authenticated per buyer by token |
 | `src/lib/tokens.ts` | Per-buyer bearer tokens (`sf_…`): shown once, stored as SHA-256 (`buyers.token_hash`) |
-| `web/` | Landing page with live order book depth, `/a/{id}` live auction page, `/buy` onboarding |
+| `web/` | Landing page with live order book depth, `/a/{id}` live auction page, `/buy` onboarding (optional per-grade caps are folded into the rules text the parser reads) and order management. Shared retro-terminal design system in `web/layout.ts` |
 | `concierge/` | Brainbase agent manifest + instructions for the hosted buyer concierge (`snapflip-concierge`) |
 
 ## Endpoints
@@ -97,6 +97,8 @@ At auction time, for each candidate order, Claude receives the photo, the grade 
 | POST | `/api/auctions/{id}/cancel` | Void the authorization (frees the hold, reopens the order) |
 | POST | `/api/auctions/{id}/refund` | Dispute: refund a captured payment (pre-transfer only) |
 | GET | `/buy/setup` | Stripe Checkout (setup mode) → saved card + code-enforced limit |
+| GET | `/buy/orders` | The session buyer's standing orders, with status and parsed grade caps (cookie session) |
+| POST | `/buy/orders/{id}/cancel` | Cancel one of the session buyer's open orders |
 | GET | `/sell/onboard` | Stripe Connect Express onboarding link |
 | POST | `/webhooks/stripe` | `checkout.session.completed`, `setup_intent.succeeded`, `payment_intent.*`, `account.updated` |
 | — | `/mcp` | MCP tools: `catalog`, `my_account`, `orderbook`, `create_standing_order`, `list_my_orders`, `cancel_order`, `raise_max`, `get_auction`. Auth: per-buyer token (`Bearer` or `?token=`) |
@@ -135,5 +137,7 @@ Photos go in R2 (`snaps/{id}.jpg`). Live auction state lives in `AuctionDO` stor
 ## Secrets (`wrangler secret put`, never commit)
 
 `API_KEY`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, plus **at least one model provider**: `ANTHROPIC_API_KEY` or `FEATHERLESS_API_KEY` (OpenAI-compatible fallback; `FEATHERLESS_MODEL` var overrides the default model). Optional: `BRAINBASE_LABS_API_KEY`, `PRICECHARTING_API_KEY` (reference prices; otherwise model web search). `TELEGRAM_BOT_USERNAME` is a plain var, not a secret.
+
+The stub fallbacks for Stripe/Claude/Telegram are dev-only. Outside `ENVIRONMENT=development`, a boot guard (`missingSecrets` in `src/lib/util.ts`) refuses HTTP requests (500), skips queue batches (messages redeliver), and skips cron runs when any required secret is absent, so a misconfigured deploy fails loudly instead of silently running on stubs.
 
 Endpoints that change state check a shared secret (Telegram header, Stripe signature, API key for Brainbase/admin endpoints). MCP is authenticated per buyer: `Authorization: Bearer sf_…` or `?token=` (Claude.ai custom connectors only take a URL); the token resolves to a `buyerId` server-side — clients can't pass one. No unauthenticated writes.

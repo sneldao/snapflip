@@ -254,16 +254,18 @@ export class AuctionDO extends DurableObject<Env> {
       return;
     }
 
-    // Winner first, then fallbacks at their own dropout price (if the winner's card fails).
+    // Winner first, then fallbacks — all at the SAME clearing price (the price the clock
+    // stopped at). Only bidders whose dropout covers the clearing price can step in, so a
+    // fallback never pays its own (higher) dropout.
     const fallbacks = s.bidders
-      .filter((b) => b.orderId !== winner.orderId && b.dropoutCents >= s.reserveCents)
+      .filter((b) => b.orderId !== winner.orderId && b.dropoutCents >= s.priceCents)
       .sort((a, b) => b.dropoutCents - a.dropoutCents)
-      .map((b) => ({ orderId: b.orderId, priceCents: b.dropoutCents }));
+      .map((b) => ({ orderId: b.orderId, priceCents: s.priceCents }));
     const result = await settleAuction(this.env, s.id, [{ orderId: winner.orderId, priceCents: s.priceCents }, ...fallbacks]);
 
     if (!result.ok) {
       await db.prepare("UPDATE auctions SET status = 'failed' WHERE id = ?").bind(s.id).run();
-      await notify(this.env, { sellerId: s.sellerId }, { type: "no_sale", auctionId: s.id, title: s.title });
+      await notify(this.env, { sellerId: s.sellerId }, { type: "settlement_failed", auctionId: s.id, title: s.title, reason: result.reason });
       return;
     }
 
@@ -344,6 +346,24 @@ export async function startAuction(env: Env, snap: Snap, reserveCents: number): 
 export const auctions = new Hono<App>();
 
 auctions.get("/a/:id/ws", (c) => auctionStub(c.env, c.req.param("id")).fetch(c.req.raw));
+
+/** Photo of the snapped item, streamed from R2 for the live auction page. */
+auctions.get("/a/:id/photo", async (c) => {
+  const row = await c.env.DB.prepare(
+    "SELECT sn.r2_key FROM auctions a JOIN snaps sn ON sn.id = a.snap_id WHERE a.id = ?",
+  )
+    .bind(c.req.param("id"))
+    .first<{ r2_key: string }>();
+  if (!row) return c.notFound();
+  const obj = await c.env.PHOTOS.get(row.r2_key);
+  if (!obj) return c.notFound();
+  const headers = new Headers();
+  obj.writeHttpMetadata(headers);
+  if (!headers.has("content-type")) headers.set("content-type", "image/jpeg");
+  headers.set("etag", obj.httpEtag);
+  headers.set("cache-control", "public, max-age=31536000, immutable");
+  return new Response(obj.body, { headers });
+});
 
 auctions.get("/api/auctions/:id", async (c) => {
   const view = await auctionStub(c.env, c.req.param("id")).getView();

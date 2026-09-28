@@ -11,6 +11,7 @@ import { McpAgent } from "agents/mcp";
 import type { MiddlewareHandler } from "hono";
 import { z } from "zod";
 import { auctionStub } from "./auction";
+import { buyerAgent } from "./buyer";
 import { buyerIdForToken } from "./lib/tokens";
 import { usd, type App } from "./lib/util";
 import { cancelOrder, createOrder, listOrders, orderbook } from "./orders";
@@ -116,8 +117,33 @@ export class SnapflipMCP extends McpAgent<Env, unknown, { buyerId: string }> {
         if (maxCents > b.limit_cents) {
           throw new Error(`Your payment limit is ${usd(b.limit_cents)}. Set maxCents at or below it.`);
         }
-        return createOrder(this.env, { buyerId, rulesText, maxCents });
+        const order = await createOrder(this.env, { buyerId, rulesText, maxCents });
+        const matchedTitles = order.rules.skuIds.length
+          ? (
+              await this.env.DB.prepare(
+                `SELECT title FROM skus WHERE id IN (${order.rules.skuIds.map(() => "?").join(",")})`,
+              ).bind(...order.rules.skuIds).all<{ title: string }>()
+            ).results.map((r) => r.title)
+          : [];
+        return { ...order, matchedTitles };
       }),
+    );
+
+    this.server.registerTool(
+      "raise_max",
+      {
+        description:
+          "Raise an order's max when your agent dropped out of a live auction and you want back in. " +
+          "Capped at your payment limit in code — it can never bid above that.",
+        inputSchema: {
+          auctionId: z.string(),
+          orderId: z.string(),
+          maxCents: z.number().int().positive().max(100_000),
+        },
+      },
+      wrap(async ({ auctionId, orderId, maxCents }, buyerId) =>
+        buyerAgent(this.env, buyerId).raise(buyerId, auctionId, orderId, maxCents),
+      ),
     );
 
     this.server.registerTool(

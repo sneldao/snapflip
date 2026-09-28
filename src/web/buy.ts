@@ -4,9 +4,10 @@ import { getCookie, setCookie } from "hono/cookie";
 import { html } from "hono/html";
 import { z } from "zod";
 import { buyerIdForToken, newBuyerToken } from "../lib/tokens";
-import { newId, requireApiKey, type App } from "../lib/util";
-import { createOrder } from "../orders";
-import type { Env } from "../types";
+import { newId, requireApiKey, usd, type App } from "../lib/util";
+import { cancelOrder, createOrder, listOrders } from "../orders";
+// Grade caps from the optional form fields are folded into the rules text the LLM parser reads.
+import type { Env, Grade } from "../types";
 import { layout } from "./layout";
 
 export const buy = new Hono<App>();
@@ -25,44 +26,115 @@ export async function createBuyer(
   return { buyerId, token };
 }
 
+const titles = (env: Env) => env.DB.prepare("SELECT title FROM skus ORDER BY title").all<{ title: string }>();
+
+type FormValues = { name?: string; email?: string; rules?: string; max?: string; capB?: string; capC?: string; capD?: string };
+
+
+const buyForm = (catalog: string[], error?: string, v: FormValues = {}) => html`
+  <p class="muted" style="font-family: var(--font-display); font-size: 0.72rem; letter-spacing: 0.22em; text-transform: uppercase">Step 1 of 3 &middot; standing order &rarr; card &rarr; agent live</p>
+  <h1>What are you hunting for?</h1>
+  <p class="muted">Your agent bids for you in live auctions, never above your max.</p>
+  ${error ? html`<div class="err">${error}</div>` : null}
+  <div class="err" id="form-error" hidden></div>
+  <form method="post" action="/buy" class="card" id="order-form">
+    <h2>Standing order</h2>
+    <label for="name">Name</label><input id="name" name="name" required maxlength="80" autocomplete="name" value="${v.name ?? ""}" />
+    <label for="email">Email <span class="muted">(optional)</span></label><input id="email" name="email" type="email" maxlength="120" autocomplete="email" value="${v.email ?? ""}" />
+    <label for="rules">What you want</label>
+    <input id="rules" name="rules" required maxlength="430" placeholder="Pokemon Yellow, authentic, label in good shape" value="${v.rules ?? ""}" />
+    <div class="chips" id="chips">
+      ${catalog.map((t) => html`<button type="button" class="chip">${t}</button>`)}
+    </div>
+    <label for="max">Max price (USD)</label><input id="max" name="max" type="number" min="1" max="1000" step="1" required value="${v.max ?? ""}" />
+    <h2 style="margin-top: 22px">Grade caps &middot; optional</h2>
+    <p class="muted">Bid less for rougher cartridges: cap what your agent pays at each grade. 0 means your agent never buys that grade.</p>
+    <div class="row">
+      <div style="flex: 1; min-width: 130px"><label for="capB">Max at grade B (USD)</label><input id="capB" name="capB" type="number" min="0" max="1000" step="1" value="${v.capB ?? ""}" /></div>
+      <div style="flex: 1; min-width: 130px"><label for="capC">Max at grade C (USD)</label><input id="capC" name="capC" type="number" min="0" max="1000" step="1" value="${v.capC ?? ""}" /></div>
+      <div style="flex: 1; min-width: 130px"><label for="capD">Max at grade D (USD)</label><input id="capD" name="capD" type="number" min="0" max="1000" step="1" value="${v.capD ?? ""}" /></div>
+    </div>
+    <p class="muted">You never pay more than your max. If your agent wins, you pay the price the auction stopped at, which is often less. If a winner's payment fails, the next agent in line buys at the same clearing price.</p>
+    <p><button type="submit">Save card and set order</button></p>
+  </form>
+  <script>
+    document.getElementById("chips").addEventListener("click", (e) => {
+      const chip = e.target.closest(".chip");
+      if (!chip) return;
+      const r = document.getElementById("rules");
+      r.value = r.value ? r.value + ", " + chip.textContent : chip.textContent;
+    });
+    document.getElementById("order-form").addEventListener("submit", (e) => {
+      const err = document.getElementById("form-error");
+      const problems = [];
+      const val = (id) => document.getElementById(id).value.trim();
+      if (!val("name")) problems.push("Name is required.");
+      if (val("rules").length < 3) problems.push("Describe what you want in a few words.");
+      const max = Number(val("max"));
+      if (!Number.isInteger(max) || max < 1 || max > 1000) problems.push("Max price must be a whole dollar amount between 1 and 1000.");
+      for (const id of ["capB", "capC", "capD"]) {
+        const cap = val(id);
+        if (cap !== "" && (!Number.isInteger(Number(cap)) || Number(cap) < 0 || Number(cap) > 1000)) problems.push("Grade caps must be whole dollar amounts between 0 and 1000.");
+      }
+      if (problems.length) {
+        e.preventDefault();
+        err.textContent = problems.join(" ");
+        err.hidden = false;
+        err.scrollIntoView({ block: "center" });
+        return;
+      }
+      const b = e.target.querySelector("button[type=submit]");
+      b.disabled = true;
+      b.textContent = "Setting up your agent…";
+    });
+  </script>`;
+
 buy.get("/buy", async (c) => {
-  const { results: skus } = await c.env.DB.prepare("SELECT title FROM skus ORDER BY title").all<{ title: string }>();
-  return c.html(
-    layout(
-      "SnapFlip: set a standing order",
-      html`<h1>What are you hunting for?</h1>
-        <p class="muted">Your agent bids for you in live auctions, never above your max.</p>
-        <form method="post" action="/buy" class="card">
-          <label for="name">Name</label><input id="name" name="name" required maxlength="80" autocomplete="name" />
-          <label for="email">Email</label><input id="email" name="email" type="email" maxlength="120" autocomplete="email" />
-          <label for="rules">What you want</label>
-          <input id="rules" name="rules" required maxlength="500" placeholder="Pokemon Yellow, authentic, label in good shape" />
-          <p class="muted">We're matching: ${skus.map((s) => s.title).join(" · ")}</p>
-          <label for="max">Max price (USD)</label><input id="max" name="max" type="number" min="1" max="1000" step="1" required />
-          <p class="muted">You never pay more than your max. If your agent wins, you pay the price the auction stopped at, which is often less.</p>
-          <p><button type="submit">Save card and set order</button></p>
-        </form>`,
-    ),
-  );
+  const { results } = await titles(c.env);
+  return c.html(layout("SnapFlip: set a standing order", buyForm(results.map((s) => s.title))));
 });
+
+// Optional per-grade caps: blank means "no cap for this grade", 0 means "never buy this grade".
+const capField = z.union([z.literal(""), z.coerce.number().int().min(0).max(1000)]).optional();
 
 const Form = z.object({
   name: z.string().min(1).max(80),
   email: z.string().email().max(120).optional().or(z.literal("")),
-  rules: z.string().min(3).max(500),
+  // 430 + up to ~70 chars of appended grade-cap text stays under orders.ts' 500-char rulesText cap.
+  rules: z.string().min(3).max(430),
   max: z.coerce.number().int().min(1).max(1000),
+  capB: capField,
+  capC: capField,
+  capD: capField,
 });
 
+const NO_MATCH = "We couldn't match that to an item we're tracking — try one of the titles below.";
+
 buy.post("/buy", async (c) => {
-  const parsed = Form.safeParse(await c.req.parseBody());
-  if (!parsed.success) return c.text("Please fill in all fields.", 400);
-  const { name, email, rules, max } = parsed.data;
+  const body = (await c.req.parseBody()) as Record<string, string>;
+  const { results } = await titles(c.env);
+  const catalog = results.map((s) => s.title);
+  const render = (error: string) => c.html(layout("SnapFlip: set a standing order", buyForm(catalog, error, body)), 400);
+
+  const parsed = Form.safeParse(body);
+  if (!parsed.success) return render("Please fill in all fields.");
+  const { name, email, rules, max, capB, capC, capD } = parsed.data;
   const limitCents = max * 100;
+  const caps: string[] = [];
+  for (const [gradeLetter, cap] of [["B", capB], ["C", capC], ["D", capD]] as const) {
+    if (typeof cap === "number") caps.push(`pay at most $${cap} if grade ${gradeLetter}`);
+  }
+  const rulesText = caps.length ? `${rules} (${caps.join("; ")})` : rules;
+  if (rulesText.length > 500) {
+    return render("Grade caps push the description over the length limit - shorten 'What you want'.");
+  }
   const { buyerId, token } = await createBuyer(c.env, { name, email, limitCents });
   try {
-    await createOrder(c.env, { buyerId, rulesText: rules, maxCents: limitCents });
+    await createOrder(c.env, { buyerId, rulesText, maxCents: limitCents });
   } catch (e) {
-    return c.text(`Couldn't create that order: ${(e as Error).message}`, 400);
+    await c.env.DB.prepare("DELETE FROM buyers WHERE id = ?").bind(buyerId).run();
+    const msg = (e as Error).message;
+    return render(msg.includes("could not match") ? NO_MATCH : msg);
   }
   setCookie(c, "sf_token", token, {
     httpOnly: true,
@@ -74,19 +146,55 @@ buy.post("/buy", async (c) => {
   return c.redirect(`/buy/setup?buyer=${buyerId}`);
 });
 
+const capLine = (caps: Partial<Record<Grade, number>>) => {
+  const parts = (Object.entries(caps) as [Grade, number][]).map(([g, c]) =>
+    c === 0 ? `Grade ${g}: won't buy` : `Grade ${g}: up to ${usd(c)}`,
+  );
+  return parts.length ? html`<p class="muted">${parts.join(" · ")}</p>` : null;
+};
+
 buy.get("/buy/done", async (c) => {
   const buyerId = c.req.query("buyer") ?? "";
   const bot = c.env.TELEGRAM_BOT_USERNAME;
   const tokenBuyer = await buyerIdForToken(c.env, getCookie(c).sf_token);
-  const connectorUrl = tokenBuyer === buyerId ? `${c.env.PUBLIC_URL}/mcp?token=${getCookie(c).sf_token}` : null;
+  const own = tokenBuyer === buyerId;
+  const connectorUrl = own ? `${c.env.PUBLIC_URL}/mcp?token=${getCookie(c).sf_token}` : null;
+
+  let ordersCard = null;
+  if (own) {
+    const myOrders = await listOrders(c.env, buyerId);
+    const skuIds = [...new Set(myOrders.flatMap((o) => o.rules.skuIds))];
+    const titlesById = new Map<string, string>();
+    if (skuIds.length) {
+      const { results } = await c.env.DB.prepare(
+        `SELECT id, title FROM skus WHERE id IN (${skuIds.map(() => "?").join(",")})`,
+      ).bind(...skuIds).all<{ id: string; title: string }>();
+      results.forEach((r) => titlesById.set(r.id, r.title));
+    }
+    ordersCard = html`<div class="card">
+      <h2>Your agent is watching for</h2>
+      ${myOrders.map(
+        (o) => html`<div>
+          <strong>${o.rulesText}</strong>
+          <span class="muted"> — up to ${usd(o.maxCents)}${o.status === "open" ? "" : ` (${o.status})`}</span>
+          <ul class="muted">${o.rules.skuIds.map((id) => html`<li>${titlesById.get(id) ?? id}</li>`)}</ul>
+          ${capLine(o.rules.gradeCaps)}
+        </div>`,
+      )}
+    </div>`;
+  }
+
   return c.html(
     layout(
       "SnapFlip: you're in",
-      html`<h1>Your agent is live.</h1>
+      html`<p class="muted" style="font-family: var(--font-display); font-size: 0.72rem; letter-spacing: 0.22em; text-transform: uppercase">Step 3 of 3 &middot; agent live</p>
+        <h1>Your agent is live.</h1>
         <p class="muted">It will bid the moment a matching item is snapped.</p>
-        ${bot
+        ${bot && own
           ? html`<p><a class="button" href="https://t.me/${bot}?start=${buyerId}">Get pinged on Telegram</a></p>`
           : html`<p class="muted">Buyer id: ${buyerId}</p>`}
+        ${ordersCard}
+        ${own ? html`<p class="muted"><a href="/buy/orders">View and manage your standing orders &rarr;</a></p>` : null}
         ${connectorUrl
           ? html`<div class="card">
               <h2>Let Claude manage your orders</h2>
@@ -102,6 +210,58 @@ buy.get("/buy/done", async (c) => {
           : null}`,
     ),
   );
+});
+
+buy.get("/buy/orders", async (c) => {
+  const buyerId = await buyerIdForToken(c.env, getCookie(c).sf_token);
+  if (!buyerId) {
+    return c.html(
+      layout(
+        "SnapFlip: your orders",
+        html`<h1>Your standing orders</h1>
+          <div class="card">
+            <h2>No session</h2>
+            <p class="muted">This browser holds no buyer session. <a href="/buy">Set a standing order</a> first; this page will then list it here.</p>
+          </div>`,
+      ),
+    );
+  }
+  const mine = await listOrders(c.env, buyerId);
+  return c.html(
+    layout(
+      "SnapFlip: your orders",
+      html`<h1>Your standing orders</h1>
+        <p class="muted">Your agent bids in every matching auction, never above your max.</p>
+        ${mine.length === 0
+          ? html`<div class="card"><p class="muted">No orders yet. <a href="/buy">Set one now.</a></p></div>`
+          : null}
+        ${mine.map(
+          (o) => html`<div class="card">
+            <div class="row" style="justify-content: space-between">
+              <div style="flex: 1; min-width: 240px">
+                <span class="badge ${o.status === "open" ? "live" : o.status === "filled" ? "sold" : "off"}">${o.status}</span>
+                <p style="margin: 10px 0 4px">${o.rulesText}</p>
+                <p class="muted" style="margin: 0">Max ${usd(o.maxCents)} &middot; since ${o.createdAt.slice(0, 10)}</p>
+                ${capLine(o.rules.gradeCaps)}
+              </div>
+              ${o.status === "open"
+                ? html`<form method="post" action="/buy/orders/${o.id}/cancel" style="margin: 0">
+                    <button type="submit" class="danger">Cancel order</button>
+                  </form>`
+                : null}
+            </div>
+          </div>`,
+        )}
+        <p class="muted"><a href="/buy">+ New standing order</a></p>`,
+    ),
+  );
+});
+
+buy.post("/buy/orders/:id/cancel", async (c) => {
+  const buyerId = await buyerIdForToken(c.env, getCookie(c).sf_token);
+  if (!buyerId) return c.text("forbidden", 403);
+  await cancelOrder(c.env, buyerId, c.req.param("id"));
+  return c.redirect("/buy/orders");
 });
 
 const BuyerInput = z.object({
