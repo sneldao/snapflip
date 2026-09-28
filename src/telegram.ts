@@ -18,6 +18,7 @@ interface TgMessage {
   text?: string;
   photo?: { file_id: string; width: number; height: number }[];
   document?: { file_id: string; mime_type?: string };
+  sticker?: { file_id: string };
   reply_markup?: { inline_keyboard: Buttons };
 }
 type ImageType = "image/jpeg" | "image/png" | "image/webp";
@@ -327,6 +328,11 @@ async function handleUpdate(env: Env, u: TgUpdate): Promise<void> {
   }
   const mime = msg.document?.mime_type ?? "";
   if (msg.document && VISION_TYPES.includes(mime)) return handlePhoto(env, msg.chat.id, msg.document.file_id, mime as ImageType);
+  if (msg.sticker) {
+    // Telegram turns .webp images into stickers on many clients.
+    await send(env, msg.chat.id, "That arrived as a sticker — Telegram does that to .webp images.\n▸ Send it as a <b>photo</b>, or attach it as a <b>file</b>, and I'll read it.");
+    return;
+  }
   if (msg.document && mime.startsWith("image/")) {
     // e.g. iPhone HEIC sent as a file — vision can't read it, but Telegram converts compressed photos to JPEG.
     await send(env, msg.chat.id, "I can't read that image format.\n▸ Send it as a <b>photo</b> (not a file) and Telegram converts it for me.");
