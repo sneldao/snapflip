@@ -38,13 +38,13 @@ Goal: 15+ attendees with a standing order and a saved card, including at least o
 **30-second pitch:** "Name a retro game you'd actually buy and the most you'd pay. Your agent bids for you when one of us finds it at a thrift store today. You're only charged if it wins, never above your max, and usually less. Scan here, it takes a minute."
 
 - Hand them the list of matchable titles (shown on `/buy`). Orders that don't name a catalog item are rejected.
-- Nudge them to phrase conditions ("B or better", "$30 if the label is worn") so dropouts on camera are varied.
+- Nudge them to phrase conditions ("B or better", "$30 if the label is worn") — or use the grade-cap fields on `/buy` — so dropouts on camera are varied.
 - Claude users: after checkout, `/buy/done` shows a personal connector URL. Claude.ai: Settings → Connectors → Add custom connector. That URL is a password; tell them not to screenshot it publicly.
 - Pick the hero buyer early: has Telegram, is happy on camera, sets an order on the hero item.
 
 ## Brainbase concierge (drop first if behind)
 
-Our side is ready: the concierge calls `POST /api/buyers` (`{name, email?, limitCents}`, `Authorization: Bearer $API_KEY`) → `{buyerId, mcpUrl, setupUrl, telegramUrl}`, sends the user `setupUrl` to save a card, then `POST /api/orders` (`{buyerId, rulesText, maxCents}`). Confirm at the Brainbase booth how a chat-deployment flow makes outbound HTTP calls with a secret header.
+Live: `snapflip-concierge` agent (`b3ff7b7f`) created via `brainbase` CLI under Papa Jams's Team — manifest + instructions in `concierge/`, pushed to the cloud agent. The agent calls `POST /api/buyers` (`{name, email?, limitCents}`, `Authorization: Bearer $API_KEY` from its secrets store) → `{buyerId, mcpUrl, setupUrl, telegramUrl}`, sends the user `setupUrl` to save a card, then `POST /api/orders` (`{buyerId, rulesText, maxCents}`). The old open question is answered: the claude-code harness sandbox gets secrets via `.brainbase/secrets.env` and can `curl` outbound. Blocked only by account credits (CREDITS_EXHAUSTED) — add credits on their Billing page or claim hackathon credits at the booth, then enable the Chat surface.
 
 ## Devpost draft
 
