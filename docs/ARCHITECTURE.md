@@ -99,7 +99,7 @@ At auction time, for each candidate order, Claude receives the photo, the grade 
 | GET | `/buy/setup` | Stripe Checkout (setup mode) → saved card + code-enforced limit |
 | GET | `/buy/orders` | The session buyer's standing orders, with status and parsed grade caps (cookie session) |
 | POST | `/buy/orders/{id}/cancel` | Cancel one of the session buyer's open orders |
-| GET | `/sell/onboard` | Stripe Connect Express onboarding link |
+| GET | `/sell/onboard` | Stripe Connect onboarding link (Accounts v2 recipient — v1 creation is policy-blocked) |
 | POST | `/webhooks/stripe` | `checkout.session.completed`, `setup_intent.succeeded`, `payment_intent.*`, `account.updated` |
 | — | `/mcp` | MCP tools: `catalog`, `my_account`, `orderbook`, `create_standing_order`, `list_my_orders`, `cancel_order`, `raise_max`, `get_auction`. Auth: per-buyer token (`Bearer` or `?token=`) |
 

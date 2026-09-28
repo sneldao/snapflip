@@ -91,9 +91,23 @@ export async function release(env: Env, auctionId: string): Promise<void> {
   let transferId = `tr_stub_${auctionId}`;
   if (!stubMode(env)) {
     if (!a.stripe_account_id) throw new Error("seller has no Connect account");
+    const s = stripe(env);
+    // Tie the transfer to the original charge so it succeeds even before the platform balance
+    // settles, and links the payout to the payment for reporting.
+    let sourceTransaction: string | undefined;
+    if (a.payment_intent_id) {
+      const pi = await s.paymentIntents.retrieve(a.payment_intent_id);
+      sourceTransaction = typeof pi.latest_charge === "string" ? pi.latest_charge : (pi.latest_charge?.id ?? undefined);
+    }
     // TODO(C): subtract shipping label cost once labels exist.
-    const t = await stripe(env).transfers.create(
-      { amount, currency: "usd", destination: a.stripe_account_id, transfer_group: `auction_${auctionId}` },
+    const t = await s.transfers.create(
+      {
+        amount,
+        currency: "usd",
+        destination: a.stripe_account_id,
+        transfer_group: `auction_${auctionId}`,
+        ...(sourceTransaction ? { source_transaction: sourceTransaction } : {}),
+      },
       { idempotencyKey: `release_${auctionId}` },
     );
     transferId = t.id;
@@ -171,7 +185,31 @@ payments.get("/buy/setup", async (c) => {
   return c.redirect(session.url!);
 });
 
-/** Seller payouts via Connect Express. */
+/**
+ * Create a Connect recipient with the Accounts v2 API. Stripe now blocks Accounts v1
+ * (Express/Custom) creation by default, so sellers are v2 accounts configured for separate
+ * charges & transfers: the platform is the fees/losses collector, and the account gets the
+ * stripe_transfers capability (activated once the seller finishes hosted onboarding).
+ */
+async function createSellerAccount(env: Env, sellerId: string): Promise<string> {
+  const account = await stripe(env).v2.core.accounts.create({
+    // Required for a recipient config. We only have the seller's Telegram, so use a reserved
+    // non-deliverable placeholder; the seller sets their real email during hosted onboarding.
+    // TODO(C): collect the seller's email up front and use it here.
+    contact_email: `${sellerId}@seller.invalid`,
+    identity: { country: "US", entity_type: "individual" },
+    defaults: { currency: "usd", responsibilities: { fees_collector: "application", losses_collector: "application" } },
+    configuration: {
+      recipient: { capabilities: { stripe_balance: { stripe_transfers: { requested: true } } } },
+      merchant: { capabilities: { card_payments: { requested: true } } },
+    },
+    dashboard: "none",
+    metadata: { sellerId },
+  });
+  return account.id;
+}
+
+/** Seller payouts via Connect (Accounts v2 recipient). */
 payments.get("/sell/onboard", async (c) => {
   const sellerId = c.req.query("seller");
   const seller = sellerId
@@ -183,9 +221,10 @@ payments.get("/sell/onboard", async (c) => {
   const s = stripe(c.env);
   let account = seller.stripe_account_id;
   if (!account) {
-    account = (await s.accounts.create({ type: "express", metadata: { sellerId: seller.id } })).id;
+    account = await createSellerAccount(c.env, seller.id);
     await c.env.DB.prepare("UPDATE sellers SET stripe_account_id = ? WHERE id = ?").bind(account, seller.id).run();
   }
+  // Hosted onboarding via AccountLinks works for v2 accounts and activates the capability.
   const link = await s.accountLinks.create({
     account,
     type: "account_onboarding",

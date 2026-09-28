@@ -72,7 +72,7 @@ Swap a stub for the real implementation without changing its signature. If you m
 ### C — Money
 - `/buy/setup` → payment limit stored. Try SPT first, time-boxed to 45 min.
 - `settleAuction`: manual-capture PaymentIntent, off-session; try the next ranked bidder if it fails.
-- `capture` on confirm, `release` (Transfer) on delivered, Connect Express onboarding at `/sell/onboard`.
+- `capture` on confirm, `release` (Transfer with `source_transaction`) on delivered, Connect onboarding at `/sell/onboard` (Accounts v2 recipients — Stripe policy-blocks v1 Express creation).
 - `/webhooks/stripe` with signature check. Test with `stripe listen --forward-to localhost:8787/webhooks/stripe`.
 - Create D1/R2/Queue resources, own `wrangler deploy`.
 - **Done when:** a real $1 end-to-end run works in live mode: authorize → capture → transfer shows in the Dashboard.
