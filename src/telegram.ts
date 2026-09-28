@@ -17,12 +17,15 @@ interface TgMessage {
   chat: { id: number };
   text?: string;
   photo?: { file_id: string; width: number; height: number }[];
+  reply_markup?: { inline_keyboard: Buttons };
 }
 interface TgUpdate {
   message?: TgMessage;
   callback_query?: { id: string; data?: string; message?: TgMessage };
 }
 type Buttons = { text: string; callback_data?: string; url?: string }[][];
+
+const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
 export async function tg<T = unknown>(env: Env, method: string, body: Record<string, unknown>): Promise<T> {
   // No token (local dev): no-op instead of hitting the real API, so callbacks don't crash.
@@ -40,12 +43,41 @@ export async function tg<T = unknown>(env: Env, method: string, body: Record<str
   return json.result;
 }
 
-export async function send(env: Env, chatId: string | number, text: string, buttons?: Buttons): Promise<void> {
+export async function send(env: Env, chatId: string | number, text: string, buttons?: Buttons): Promise<number | undefined> {
   if (!env.TELEGRAM_BOT_TOKEN) {
     console.log(`[tg stub → ${chatId}] ${text}`);
     return;
   }
-  await tg(env, "sendMessage", { chat_id: chatId, text, ...(buttons ? { reply_markup: { inline_keyboard: buttons } } : {}) });
+  const msg = await tg<{ message_id: number }>(env, "sendMessage", {
+    chat_id: chatId, text, parse_mode: "HTML",
+    link_preview_options: { is_disabled: true },
+    ...(buttons ? { reply_markup: { inline_keyboard: buttons } } : {}),
+  });
+  return msg.message_id;
+}
+
+/** Edit a message in place. Falls back to a fresh send when there's no id or the edit fails.
+ *  Omitting buttons clears the inline keyboard — that's the intent. */
+export async function edit(env: Env, chatId: string | number, messageId: number | undefined, text: string, buttons?: Buttons): Promise<number | undefined> {
+  if (!env.TELEGRAM_BOT_TOKEN) {
+    console.log(`[tg stub → ${chatId}] ${text}`);
+    return messageId;
+  }
+  if (messageId === undefined) return send(env, chatId, text, buttons);
+  try {
+    await tg(env, "editMessageText", {
+      chat_id: chatId, message_id: messageId, text, parse_mode: "HTML",
+      link_preview_options: { is_disabled: true },
+      ...(buttons ? { reply_markup: { inline_keyboard: buttons } } : {}),
+    });
+    return messageId;
+  } catch {
+    return send(env, chatId, text, buttons);
+  }
+}
+
+export async function typing(env: Env, chatId: string | number): Promise<void> {
+  await tg(env, "sendChatAction", { chat_id: chatId, action: "typing" }).catch(() => {});
 }
 
 /** HANDOFF B, C → A. Every user-facing message goes through here. */
@@ -62,31 +94,35 @@ export async function notify(env: Env, to: NotifyTarget, event: NotifyEvent): Pr
     case "agent_dropped": {
       // One-tap override: offer to lift the order max 25% past the dropout point and rejoin.
       const raiseToCents = Math.ceil((event.atCents * 1.25) / 100) * 100;
-      text = `Your agent dropped out of ${event.title} at ${usd(event.atCents)} (${event.reason}). ${link(event.auctionId)}`;
-      buttons = [[{ text: `Raise max to ${usd(raiseToCents)} and rejoin`, callback_data: `raise:${event.auctionId}:${event.orderId}:${raiseToCents}` }]];
+      text = `<code>DROPPED @ ${usd(event.atCents)}</code> · ${esc(event.title)}\n${esc(event.reason)}`;
+      buttons = [
+        [{ text: `Raise max to ${usd(raiseToCents)} and rejoin`, callback_data: `raise:${event.auctionId}:${event.orderId}:${raiseToCents}` }],
+        [{ text: "Watch live", url: link(event.auctionId) }],
+      ];
       break;
     }
     case "auction_won":
-      text = `Your agent won ${event.title} for ${usd(event.priceCents)}. Card authorized; you're charged when the seller confirms.`;
+      text = `<code>WON ${usd(event.priceCents)}</code> · ${esc(event.title)}\nCard authorized, not charged. You pay only once the seller has the item in hand.`;
+      buttons = [[{ text: "Watch live", url: link(event.auctionId) }]];
       break;
     case "presold":
-      text = `PRE-SOLD: ${event.title} cleared at ${usd(event.priceCents)}. You net ${usd(event.netCents)}. Buy it, then tap below.`;
+      text = `<code>SOLD ${usd(event.priceCents)}</code> · ${esc(event.title)}\nCleared your floor. You net <b>${usd(event.netCents)}</b>.\n▸ Grab it off the rack, then tap below.`;
       buttons = [[{ text: "I bought it", callback_data: `confirm:${event.auctionId}` }]];
       break;
     case "no_sale":
-      text = `No sale on ${event.title}: nothing cleared your reserve. Leave it on the rack.`;
+      text = `<code>NO SALE</code> · ${esc(event.title)}\nNothing cleared your floor. Leave it on the rack — no harm done.`;
       break;
     case "settlement_failed":
-      text = `${event.title} cleared your reserve, but no payment went through (${event.reason}). No charge was made - snap the item again to re-list it.`;
+      text = `<code>NO SALE</code> · ${esc(event.title)}\nIt cleared your floor, but no payment went through (${esc(event.reason)}). Nobody was charged.\n▸ Snap it again to re-list.`;
       break;
     case "captured":
-      text = `Seller has your ${event.title}. Charged ${usd(event.priceCents)}.`;
+      text = `<code>CAPTURED ${usd(event.priceCents)}</code> · ${esc(event.title)}\nThe seller has it. Your card was charged.`;
       break;
     case "shipped":
-      text = `${event.title} shipped. Tracking: ${event.tracking}`;
+      text = `<code>SHIPPED</code> · ${esc(event.title)}\nTracking <code>${esc(event.tracking)}</code>`;
       break;
     case "released":
-      text = `Payout of ${usd(event.amountCents)} sent for auction ${event.auctionId}.`;
+      text = `<code>PAID OUT ${usd(event.amountCents)}</code>\nTransferred to your Stripe account.`;
       break;
   }
   if (!chatId) {
@@ -123,7 +159,7 @@ async function handlePhoto(env: Env, msg: TgMessage): Promise<void> {
   const chatId = msg.chat.id;
   const sellerId = await upsertSeller(env, chatId);
   const largest = msg.photo!.reduce((a, b) => (a.width * a.height > b.width * b.height ? a : b));
-  await send(env, chatId, "Got it. Identifying and grading...");
+  const statusId = await send(env, chatId, "&gt; reading label…");
 
   const file = await tg<{ file_path: string }>(env, "getFile", { file_id: largest.file_id });
   const photo = await (await fetch(`https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${file.file_path}`)).arrayBuffer();
@@ -131,6 +167,7 @@ async function handlePhoto(env: Env, msg: TgMessage): Promise<void> {
   const r2Key = `snaps/${snapId}.jpg`;
   await env.PHOTOS.put(r2Key, photo, { httpMetadata: { contentType: "image/jpeg" } });
 
+  await typing(env, chatId);
   const id = await identify(env, photo);
   // Persist the snap up front (SKU still unknown) so a picker callback can resolve it later.
   await env.DB.prepare("INSERT INTO snaps (id, seller_id, r2_key, confidence) VALUES (?, ?, ?, ?)")
@@ -139,35 +176,44 @@ async function handlePhoto(env: Env, msg: TgMessage): Promise<void> {
 
   // Confident: grade and go straight to the reserve prompt.
   if (id.skuId && id.confidence >= CONFIDENCE_THRESHOLD) {
-    return finalizeIdentification(env, chatId, snapId, id.skuId, id.title);
+    return finalizeIdentification(env, chatId, snapId, id.skuId, id.title, statusId);
   }
 
   // Low confidence: let the seller pick from the top matches instead of guessing wrong.
   const options = identifyOptions(id).slice(0, 3);
   if (options.length) {
-    await send(
+    await edit(
       env,
       chatId,
-      `Not sure which one this is${id.title ? ` — closest guess is ${id.title}` : ""}. Tap the match:`,
+      statusId,
+      `Not sure which one this is${id.title ? ` — closest guess <b>${esc(id.title)}</b>` : ""}. Tap the match:`,
       options.map((o) => [{ text: o.title, callback_data: `pick:${snapId}:${o.skuId}` }]),
     );
     return;
   }
-  await send(env, chatId, "Couldn't match this to a catalog item. Try another angle with the label in view.");
+  await edit(
+    env,
+    chatId,
+    statusId,
+    `Couldn't match that to the catalog.\n▸ Try again with the label facing the camera — or <a href="${esc(env.PUBLIC_URL)}/">see what's in demand</a>.`,
+  );
 }
 
-/** Grade the (now-known) item, save it against the snap, and prompt the seller for a reserve. */
-async function finalizeIdentification(env: Env, chatId: number, snapId: string, skuId: string, title: string): Promise<void> {
+/** Grade the (now-known) item, save it against the snap, and prompt the seller for a reserve.
+ *  Edits the status message in place so the photo flow is one message. */
+async function finalizeIdentification(env: Env, chatId: number, snapId: string, skuId: string, title: string, statusMsgId?: number): Promise<void> {
   const row = await env.DB.prepare("SELECT seller_id, r2_key FROM snaps WHERE id = ?").bind(snapId).first<{ seller_id: string; r2_key: string }>();
   if (!row) {
-    await send(env, chatId, "That photo expired — snap it again.");
+    await edit(env, chatId, statusMsgId, "That photo expired — snap it again.");
     return;
   }
   const obj = await env.PHOTOS.get(row.r2_key);
   if (!obj) {
-    await send(env, chatId, "Lost the photo — snap it again.");
+    await edit(env, chatId, statusMsgId, "Lost the photo — snap it again.");
     return;
   }
+  await edit(env, chatId, statusMsgId, `&gt; grading <b>${esc(title)}</b>…`);
+  await typing(env, chatId);
   const g = await grade(env, await obj.arrayBuffer(), title);
   await env.DB.prepare("UPDATE snaps SET sku_id = ?, grade = ?, grade_notes = ?, flags_json = ? WHERE id = ?")
     .bind(skuId, g.grade, g.notes, JSON.stringify(g.flags), snapId)
@@ -179,12 +225,14 @@ async function finalizeIdentification(env: Env, chatId: number, snapId: string, 
   };
   const eligible = (await findCandidates(env, snap)).filter((v) => v.eligible).length;
   // Don't reveal bid amounts: they're private to each buyer agent.
-  await send(
+  await edit(
     env,
     chatId,
-    `${title}, grade ${g.grade}: ${g.notes}\n` +
-      `${eligible} buyer agent${eligible === 1 ? "" : "s"} ready to bid.\n` +
-      (eligible ? "Reply with your minimum price in dollars (e.g. 10) to start a 60s auction." : "No matching demand right now."),
+    statusMsgId,
+    `<b>${esc(title)}</b> · grade ${g.grade}\n${esc(g.notes)}\n\n` +
+      (eligible
+        ? `<b>${eligible} buyer agent${eligible === 1 ? "" : "s"}</b> ready to bid.\n▸ Reply with a floor price (e.g. <code>10</code>) to open a 60s auction.`
+        : `No standing orders for this one yet.\n▸ Leave it on the rack — or <a href="${esc(env.PUBLIC_URL)}/">see what's in demand</a>.`),
   );
 }
 
@@ -197,7 +245,7 @@ async function handleReserve(env: Env, msg: TgMessage, dollars: number): Promise
       ).bind(seller.id).first<Record<string, unknown>>()
     : null;
   if (!row) {
-    await send(env, msg.chat.id, "Send a photo first.");
+    await send(env, msg.chat.id, "No item waiting for a price.\n▸ Send a photo first.");
     return;
   }
   const reserveCents = Math.round(dollars * 100);
@@ -208,8 +256,8 @@ async function handleReserve(env: Env, msg: TgMessage, dollars: number): Promise
     gradeNotes: row.grade_notes as string, flags: JSON.parse(row.flags_json as string), rackCents: null, reserveCents,
   };
   const { auctionId, view } = await startAuction(env, snap, reserveCents);
-  await send(env, msg.chat.id, `Auction live with ${view.active.length} agents. Watch it climb:`, [
-    [{ text: "Open live auction", url: `${env.PUBLIC_URL}/a/${auctionId}` }],
+  await send(env, msg.chat.id, `<code>LIVE</code> 60s auction · <b>${view.active.length} agents</b> bidding on ${esc(row.title as string)}.`, [
+    [{ text: "Watch it climb", url: `${env.PUBLIC_URL}/a/${auctionId}` }],
   ]);
 }
 
@@ -217,12 +265,25 @@ async function handleUpdate(env: Env, u: TgUpdate): Promise<void> {
   if (u.callback_query) {
     const parts = (u.callback_query.data ?? "").split(":");
     const action = parts[0];
-    await tg(env, "answerCallbackQuery", { callback_query_id: u.callback_query.id });
-    const chatId = u.callback_query.message?.chat.id;
+    const cbMsg = u.callback_query.message;
+    const chatId = cbMsg?.chat.id;
+    // Answer first so the button stops spinning, then strip the keyboard so nothing is double-tapped.
+    const toasts: Record<string, string> = {
+      confirm: "Capturing payment…",
+      delivered: "Releasing payout…",
+      raise: "Raising your max…",
+      pick: "Got it — grading…",
+    };
+    await tg(env, "answerCallbackQuery", { callback_query_id: u.callback_query.id, text: toasts[action] });
+    let stripped = false;
+    if (["confirm", "delivered", "raise"].includes(action) && cbMsg) {
+      await tg(env, "editMessageReplyMarkup", { chat_id: cbMsg.chat.id, message_id: cbMsg.message_id, reply_markup: { inline_keyboard: [] } }).catch(() => {});
+      stripped = true;
+    }
     try {
       if (action === "confirm") {
         await capture(env, parts[1]);
-        if (chatId) await send(env, chatId, "Payment captured. Ship it, then tap below.", [[{ text: "Delivered (demo)", callback_data: `delivered:${parts[1]}` }]]);
+        if (chatId) await send(env, chatId, "<code>CAPTURED</code> Payment's in. Ship it, then tap below.", [[{ text: "Delivered (demo)", callback_data: `delivered:${parts[1]}` }]]);
       } else if (action === "delivered") {
         await release(env, parts[1]);
       } else if (action === "raise") {
@@ -231,14 +292,18 @@ async function handleUpdate(env: Env, u: TgUpdate): Promise<void> {
         const order = await env.DB.prepare("SELECT buyer_id FROM orders WHERE id = ?").bind(orderId).first<{ buyer_id: string }>();
         if (!order) throw new Error("unknown order");
         const view = await buyerAgent(env, order.buyer_id).raise(order.buyer_id, auctionId, orderId, Number(cents));
-        if (chatId) await send(env, chatId, `Max raised to ${usd(Number(cents))}. Your agent is back in with ${view.active.length} agents still bidding. ${env.PUBLIC_URL}/a/${auctionId}`);
+        if (chatId) await send(env, chatId, `<code>BACK IN</code> Max raised to ${usd(Number(cents))}. ${view.active.length} agents still bidding.`, [[{ text: "Watch live", url: `${env.PUBLIC_URL}/a/${auctionId}` }]]);
       } else if (action === "pick") {
         const [, snapId, skuId] = parts;
         const sku = await env.DB.prepare("SELECT title FROM skus WHERE id = ?").bind(skuId).first<{ title: string }>();
-        if (chatId && sku) await finalizeIdentification(env, chatId, snapId, skuId, sku.title);
+        if (chatId && sku) await finalizeIdentification(env, chatId, snapId, skuId, sku.title, cbMsg?.message_id);
       }
     } catch (e) {
-      if (chatId) await send(env, chatId, `Couldn't do that: ${(e as Error).message}`);
+      // Put the original keyboard back before apologizing so the tap can be retried.
+      if (stripped && cbMsg?.reply_markup) {
+        await tg(env, "editMessageReplyMarkup", { chat_id: cbMsg.chat.id, message_id: cbMsg.message_id, reply_markup: cbMsg.reply_markup }).catch(() => {});
+      }
+      if (chatId) await send(env, chatId, `Couldn't do that: ${esc((e as Error).message)}\n▸ Try again in a moment.`);
     }
     return;
   }
@@ -249,15 +314,37 @@ async function handleUpdate(env: Env, u: TgUpdate): Promise<void> {
 
   const text = msg.text?.trim() ?? "";
   // Buyer linking: t.me/<bot>?start=<buyerId>
-  const start = text.match(/^\/start\s+(b_[a-z0-9]+)$/i);
+  const start = text.match(/^\/start(?:@\w+)?\s+(b_[a-z0-9]+)$/i);
   if (start) {
     const r = await env.DB.prepare("UPDATE buyers SET tg_chat_id = ? WHERE id = ?").bind(String(msg.chat.id), start[1]).run();
-    await send(env, msg.chat.id, r.meta.changes ? "Linked. Your agent will message you here when it bids and wins." : "Unknown buyer link.");
+    await send(
+      env,
+      msg.chat.id,
+      r.meta.changes
+        ? "<code>LINKED</code> Your agent will ping you here when it bids, drops out, or wins."
+        : `That link didn't match a buyer.\n▸ <a href="${esc(env.PUBLIC_URL)}/buy">Set a standing order</a> to get a fresh one.`,
+      r.meta.changes ? [[{ text: "My standing orders", url: `${env.PUBLIC_URL}/buy/orders` }]] : undefined,
+    );
+    return;
+  }
+  if (/^\/(start|help)(@\w+)?$/i.test(text)) {
+    await send(
+      env,
+      msg.chat.id,
+      `<b>&gt; snapflip▊</b>\nSold before you buy it.\n\n` +
+        `Snap a cartridge you're eyeing on the rack. I'll identify it, grade it, and run a 60-second auction ` +
+        `against buyer agents holding real money, before you pay for it.\n\n` +
+        `▸ Send a photo, label facing the camera\n▸ Set a floor price\n▸ Watch it climb, then decide`,
+      [
+        [{ text: "What's in demand", url: `${env.PUBLIC_URL}/` }],
+        [{ text: "I collect — set a standing order", url: `${env.PUBLIC_URL}/buy` }],
+      ],
+    );
     return;
   }
   const price = text.match(/^\$?(\d{1,4}(?:\.\d{1,2})?)$/);
   if (price) return handleReserve(env, msg, Number(price[1]));
-  await send(env, msg.chat.id, "Snap a photo of an item to see who wants it.");
+  await send(env, msg.chat.id, "Send me a photo of a cartridge to see who wants it.\n▸ Or /help for how it works.");
 }
 
 export const telegram = new Hono<App>();
