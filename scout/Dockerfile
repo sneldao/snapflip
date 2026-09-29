@@ -5,6 +5,9 @@
 #     public.ecr.aws/e1h7x4a2/plow-cloud-agents:base-<commit-sha>
 FROM public.ecr.aws/e1h7x4a2/plow-cloud-agents:base-771198a9609dcef54d44843e7da5329c17fa51b4@sha256:f1e7c421b97a80f1bd17015f96daceb965f350a241f7edc7e4d856a0e3a6f8f5
 
+# Links the GHCR package page to the repo (README, contributors).
+LABEL org.opencontainers.image.source="https://github.com/sneldao/snapflip"
+
 # Agent Index identity. At boot the image registers/claims this listing and
 # reports token usage every 5 minutes. A cloud install has no compose file, so
 # the id can only come from here — without it nothing is reported.
