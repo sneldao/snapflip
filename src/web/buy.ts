@@ -44,6 +44,7 @@ const buyForm = (catalog: string[], error?: string, v: FormValues = {}) => html`
     <label for="email">Email <span class="muted">(optional)</span></label><input id="email" name="email" type="email" maxlength="120" autocomplete="email" value="${v.email ?? ""}" />
     <label for="rules">What you want</label>
     <input id="rules" name="rules" required maxlength="430" placeholder="Pokemon Yellow, authentic, label in good shape" value="${v.rules ?? ""}" />
+    <p class="muted" style="margin-top:4px">Free text — describe it your way, condition quirks and all. Off-catalog hunts get logged as unmet demand. (Suggestions below are shortcuts, not a menu.)</p>
     <div class="chips" id="chips">
       ${catalog.map((t) => html`<button type="button" class="chip">${t}</button>`)}
     </div>

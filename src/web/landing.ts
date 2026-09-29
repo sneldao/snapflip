@@ -718,6 +718,7 @@ landing.get("/", async (c) => {
         .hero h1 { color: #f6ead0; }
         .hero .lede { color: #ecdfc2; }
         .hero .cta-note { color: #bda87e; }
+        .hero .cta-note strong { color: #f0d6a0; }
         .hero h1, .hero .lede, .hero .cta-note { text-shadow: 0 2px 14px rgba(0,0,0,0.85); max-width: 32em; }
         .hero a:not(.button) { color: var(--phos); }
         .hero .park-row { max-width: 620px; width: 100%; }
@@ -868,12 +869,13 @@ landing.get("/", async (c) => {
         <h1>Tell an agent what you're hunting. <span class="glow">It wins it for you.</span></h1>
         <p class="lede">Set your max once. When a reseller snaps a match at a thrift store, your agent bids in a 60-second auction — and never goes a dollar over.</p>
         <form method="get" action="/buy" class="park-row">
-          <input name="sku" list="sku-list" maxlength="120" placeholder="What are you hunting? e.g. Pokemon Yellow" autocomplete="off" aria-label="Item you want" />
+          <input name="sku" list="sku-list" maxlength="120" placeholder="What are you hunting? Describe it your way" autocomplete="off" aria-label="Item you want" />
           <datalist id="sku-list"></datalist>
           <input name="max" type="number" min="1" max="1000" step="1" placeholder="Max $" aria-label="Max price in USD" />
           <button type="submit" class="primary">Start hunting →</button>
         </form>
-        <p class="cta-note">Charged only if your agent wins — never above your max. <a href="/sell">Reselling instead? →</a></p>
+        <p class="cta-note">Type anything — off-catalog hunts get logged as demand. Charged only if your agent wins.<br />
+          Prefer the desk? Text <strong>+1 650 315 6536</strong> · Resellers snap via Telegram — <a href="${tgUrl}">@snapflipbot</a></p>
       </section>
       <script>
         (function () {
@@ -992,7 +994,8 @@ landing.get("/", async (c) => {
       </div>
       <div style="display:none"><span id="demand-top">$0</span><span id="collectors-top">0</span><span id="tx-top">0</span></div>
       ${soonRail}
-      <p class="foot muted"><span class="blabel">Built with</span>Anthropic Claude · Featherless · Cloudflare Workers, D1, R2, Durable Objects · Stripe Connect · Brainbase<br />Built at Startup Speedrun · <a href="/?tour=1">take the scroll tour</a> · Archival footage: Moving Image Archive (public domain).</p>
+      <p class="foot muted"><span class="blabel">Talk to us</span>Text the desk: <a href="sms:+16503156536">+1 650 315 6536</a> · Resellers: <a href="${tgUrl}">@snapflipbot</a> on Telegram<br />
+        <span class="blabel">Built with</span>Anthropic Claude · Featherless · Cloudflare Workers, D1, R2, Durable Objects · Stripe Connect · Brainbase<br />Built at Startup Speedrun · <a href="/?tour=1">take the scroll tour</a> · Archival footage: Moving Image Archive (public domain).</p>
       ${tapeScript}
       ${statsScript}
       ${backdropScript}`,
