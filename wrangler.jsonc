@@ -5,7 +5,8 @@
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
   // Static files (landing footage backdrops in public/media). Existing files are served before the Worker runs.
-  "assets": { "directory": "./public" },
+  // /media/* goes through the Worker first so it can answer Range requests (Safari won't play video without 206s).
+  "assets": { "directory": "./public", "binding": "ASSETS", "run_worker_first": ["/media/*"] },
 
   // Owner: C. Create with `wrangler d1 create snapflip` and paste the id here.
   "d1_databases": [

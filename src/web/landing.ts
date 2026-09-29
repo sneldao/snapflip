@@ -20,6 +20,34 @@ landing.get("/og.png", () => {
   });
 });
 
+/** Landing footage with byte-range support: static assets answer Range with a full 200, and
+ *  iOS Safari refuses to play video without 206 partial responses. Clips are < 0.5 MB each. */
+landing.get("/media/:file", async (c) => {
+  const res = await c.env.ASSETS.fetch(new Request(new URL(c.req.path, c.req.url)));
+  const range = c.req.header("range")?.match(/^bytes=(\d*)-(\d*)$/);
+  if (!res.ok || !range) {
+    const h = new Headers(res.headers);
+    h.set("accept-ranges", "bytes");
+    h.set("cache-control", "public, max-age=86400");
+    return new Response(res.body, { status: res.status, headers: h });
+  }
+  const buf = await res.arrayBuffer();
+  const size = buf.byteLength;
+  const start = range[1] ? Number(range[1]) : Math.max(0, size - Number(range[2]));
+  const end = range[1] && range[2] ? Math.min(Number(range[2]), size - 1) : size - 1;
+  if (start >= size || start > end) return new Response(null, { status: 416, headers: { "content-range": `bytes */${size}` } });
+  return new Response(buf.slice(start, end + 1), {
+    status: 206,
+    headers: {
+      "content-type": res.headers.get("content-type") ?? "application/octet-stream",
+      "content-range": `bytes ${start}-${end}/${size}`,
+      "content-length": String(end - start + 1),
+      "accept-ranges": "bytes",
+      "cache-control": "public, max-age=86400",
+    },
+  });
+});
+
 /** Live stats for the public pages. Excludes seeded b_demo_* buyers: the demo needs real numbers only. */
 landing.get("/api/stats", async (c) => {
   const { results: skus } = await c.env.DB.prepare(

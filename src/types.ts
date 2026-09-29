@@ -6,6 +6,7 @@ import type { SnapflipMCP } from "./mcp";
 export interface Env {
   DB: D1Database;
   PHOTOS: R2Bucket;
+  ASSETS: Fetcher;
   MATCH_QUEUE: Queue<MatchJob>;
   AUCTION: DurableObjectNamespace<AuctionDO>;
   BUYER: DurableObjectNamespace<BuyerAgent>;
