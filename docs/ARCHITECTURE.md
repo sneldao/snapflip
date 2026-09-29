@@ -88,6 +88,7 @@ Match-time lookup (`findCandidates`, the `order_skus` join) is unaffected — it
 | `src/lib/tokens.ts` | Per-buyer bearer tokens (`sf_…`): shown once, stored as SHA-256 (`buyers.token_hash`) |
 | `web/` | Landing page (footage-backed hero with the order form inline, snap · bid · sold demo synced to a simulated auction, live order book, guardrails, FAQ; see BUILD.md "Landing page" for the design principles and next step), footage served from `public/media` with byte ranges (`/media/*`), `/a/{id}` live auction page (polaroid snap, pixel-bot agent chips, boss-bar clock, GOING ONCE during soft-close — `AuctionView.closing`), `/buy` onboarding (optional per-grade caps are folded into the rules text the parser reads) and order management. Shared retro-terminal design system in `web/layout.ts` |
 | `concierge/` | Brainbase agent manifest + instructions for the hosted buyer concierge (`snapflip-concierge`) |
+| `scout/` | Scout, the collector-desk agent — OpenClaw 2.0 on the Plow base image (own Dockerfile, persona, `snapflip` skill). Desk mode: hosted phone line, no credentials, public endpoints only. Personal mode: 1-click installs carry the owner's own `sf_` token to `/mcp`. MIT-licensed with the repo. |
 
 ## Endpoints
 

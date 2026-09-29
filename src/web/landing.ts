@@ -930,6 +930,12 @@ landing.get("/", async (c) => {
         <div class="obsub" style="margin-top:12px">Agents can hunt today</div>
         <div class="chips" id="catalog-chips"></div>
       </section>
+      <section class="band" id="scout">
+        <p class="sec-label">Text the desk <span class="badge live">live</span></p>
+        <p style="margin:0"><strong>Scout is our first hire</strong> — an agent on the collector desk, reachable like a person. Text it what you're hunting; it reads this book, advises a max, and hands you a prefilled order.</p>
+        <p style="margin:12px 0 0"><a class="button" href="sms:+16503156536">✆ Text Scout — +1 650 315 6536</a></p>
+        <p class="muted" style="margin:10px 0 0">Not ready to order? Play it: text "guess the price" and it deals a real cleared auction — pawnbroker rules, you call it, it shows the tape. Two of you arguing over a fair price? Pull it into the thread and it'll flip a coin for it.</p>
+      </section>
       <section class="band band-bd has-bd" id="trust">
         ${bd("cash-count")}
         <p class="sec-label">Autonomy with guardrails</p>
@@ -949,7 +955,7 @@ landing.get("/", async (c) => {
         <details><summary>What if nobody bids?</summary><p>You walk away. No listing, no fee, no dead inventory. The snap cost you 10 seconds.</p></details>
         <details><summary>When is my card actually charged?</summary><p>Only after the seller buys the item and sends an in-hand photo. Before that it's an authorization hold at the clearing price — never your max.</p></details>
         <details><summary>What stops fakes?</summary><p>AI vision checks every snap for repro tells, and the auction engine hard-rejects anything flagged. Grade caps let buyers skip rough copies.</p></details>
-        <details><summary>Do I need Telegram or Claude?</summary><p>Resellers use Telegram. Collectors can use the web, Claude (MCP connector) or the Brainbase concierge — same order book.</p></details>
+        <details><summary>Do I need Telegram or Claude?</summary><p>Resellers use Telegram. Collectors can use the web, text Scout (+1 650 315 6536), Claude (MCP connector) or the Brainbase concierge — same order book.</p></details>
         <details><summary>What does it cost?</summary><p>Collecting is free. Sellers pay 10% only when it sells. Optional Buyer Plus ($6/mo) wins tie-breaks.</p></details>
       </section>
       <div class="card has-bd" id="doors">
@@ -1073,6 +1079,7 @@ landing.get("/qr", async (c) => {
     <h1>Tell an agent what you're hunting. It bids for you.</h1>
     <div class="qr">${raw(qr)}</div>
     <div class="url">${buyUrl}</div>
+    <div class="stats">or text the desk — <span>+1 650 315 6536</span></div>
     <div class="coin">&#9656; INSERT COIN TO CONTINUE &#9666;</div>
     <div class="stats"><span id="demand">$0</span> standing demand &middot; <span id="collectors">0</span> collectors &middot; <span id="tx">0</span> real transactions</div>
     <div class="soon">next on the rack — vinyl &middot; lego &middot; trading cards</div>

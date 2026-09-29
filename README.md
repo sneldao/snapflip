@@ -12,7 +12,7 @@ Collectors have the opposite problem. They know exactly what they want and what 
 
 ## How it works
 
-1. **Buyers set standing orders with an agent.** "Pokémon Yellow, cartridge only, authentic, good label, up to $45." They can do this through Claude (MCP), a Brainbase-hosted concierge, or the web. The buyer grants a spending limit that only works at SnapFlip, is capped, and expires.
+1. **Buyers set standing orders with an agent.** "Pokémon Yellow, cartridge only, authentic, good label, up to $45." They can do this through Claude (MCP), a Brainbase-hosted concierge, the web, or by texting **Scout** — our collector-desk agent on OpenClaw (`scout/`): **+1 650 315 6536**. The buyer grants a spending limit that only works at SnapFlip, is capped, and expires.
 2. **A reseller snaps an item at the thrift store** (Telegram). Claude identifies the exact SKU and grades its condition from the photo.
 3. **A flash auction starts** among every buyer agent whose order matches. It's a 60-second ascending-clock auction. The price ticks up, and each agent drops out once the price passes what its buyer would pay *for this specific item and grade*. The seller watches the bids climb live on their phone.
 4. **The seller decides with certainty.** "Cleared at $38. You net $34.20 after fees. Rack price $6." They buy the item, confirm with a photo, and the buyer's card is charged.
@@ -44,6 +44,6 @@ A 10% seller fee on the clearing price (`SELLER_FEE_BPS`, snapshotted per sale i
 | Stripe | Buyer spending limits (saved card charged off-session, cap enforced in code; Shared Payment Tokens slot in later), manual capture, Connect Express seller payouts via separate charges and transfers, webhooks |
 | Brainbase | Hosted buyer concierge worker (chat deployment) that creates standing orders through our API |
 
-**Live:** https://go.snapflip.workers.dev — landing page with real-time demand; `/buy` to set a standing order, `/mcp?token=…` as a Claude connector.
+**Live:** https://go.snapflip.workers.dev — landing page with real-time demand; `/buy` to set a standing order, `/mcp?token=…` as a Claude connector. Text the collector desk: **+1 650 315 6536** — Scout qualifies you, cites the live book, and hands off a prefilled order (or plays "guess the clearing price" if you're just browsing).
 
 Docs: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/BUILD.md`](docs/BUILD.md), [`docs/DEMO.md`](docs/DEMO.md).

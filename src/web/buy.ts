@@ -254,7 +254,12 @@ buy.get("/buy/done", async (c) => {
               </ul>
               <p class="muted"><strong>This URL is a password.</strong> Anyone who has it can act as your buyer. Don't share it.</p>
             </div>`
-          : null}`,
+          : null}
+        <div class="card">
+          <h2>Text the desk</h2>
+          <p class="muted">Scout — our collector-desk agent — answers questions, reads you the live book, and can talk you through your next order: <a href="sms:+16503156536">+1 650 315 6536</a>.</p>
+          <p class="muted">Run your own instead? Scout is a one-click install on the <a href="https://aiworthusing.com/agent-index/snapflip-scout">Agent Index</a> (OpenClaw, MIT) — it uses the same token above.</p>
+        </div>`,
       { image: `${c.env.PUBLIC_URL}/og.png` },
     ),
   );

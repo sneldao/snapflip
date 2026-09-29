@@ -30,6 +30,9 @@ SnapFlip runs Scout on a Plow phone line. Anyone can text it:
   commits in Stripe Checkout
 - answers "how it works" and auction follow-ups; captures off-catalog interest
   as unmet demand
+- **the on-ramp**: "what's it worth?" — it deals a real cleared auction and you
+  guess the price (pawnbroker rules over `/api/stats`), and in group threads it
+  runs coin-flip arbitration between two people's numbers
 - posts the demand digest in the founders' group room — and any founder can
   join a customer thread live (multiplayer presence) to steer or take over
 
