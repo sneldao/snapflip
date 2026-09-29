@@ -607,7 +607,7 @@ landing.get("/", async (c) => {
     </div>
     <main class="tour-scroll">
       <section class="tour-beat" id="t1"><div class="beat-card">
-        <div class="k">◉ Startup Speedrun · live demo</div>
+        <div class="k">◉ live demo — scroll to fly the rack</div>
         <h1>Know it's sold before you pay.</h1>
         <p>Collectors park a max. Resellers snap the rack. Agents bid 60s. <span class="muted">Scroll — the camera flies the route.</span></p>
         <p><a class="button" href="/buy">I collect</a><a class="button ghost" href="${tgUrl}">I resell</a></p>
@@ -865,7 +865,7 @@ landing.get("/", async (c) => {
       </div>
       <section class="hero has-bd">
         ${bd("storefront")}
-        <p class="eyebrow">◉ Live at Startup Speedrun · real money</p>
+        <p class="eyebrow">◉ Live · real money · real agents</p>
         <h1>Tell an agent what you're hunting. <span class="glow">It wins it for you.</span></h1>
         <p class="lede">Set your max once. When a reseller snaps a match at a thrift store, your agent bids in a 60-second auction — and never goes a dollar over.</p>
         <form method="get" action="/buy" class="park-row">
@@ -1054,7 +1054,8 @@ landing.get("/sell", (c) => {
         </ul>
         <p style="margin:14px 0 0"><a class="button ghost" href="${tgUrl}">▸ Open the bot and snap it</a></p>
       </div>
-      <p class="muted"><a href="/">← Back to the full pitch</a></p>`,
+      <p class="muted"><a href="/">← Back to the full pitch</a></p>
+      <p class="muted" style="margin-top:20px; font-size:0.8rem"><span style="font-family: var(--font-display); font-size: 0.62rem; font-weight: 600; letter-spacing: 0.2em; text-transform: uppercase; color: var(--accent); margin-right: 8px">Talk to us</span>Snap here on Telegram · Collectors text the desk: <a href="sms:+16503156536">+1 650 315 6536</a></p>`,
       { image: `${c.env.PUBLIC_URL}/og.png` },
     ),
   );

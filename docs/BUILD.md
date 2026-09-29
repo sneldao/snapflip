@@ -115,8 +115,10 @@ Swap a stub for the real implementation without changing its signature. If you m
 - Six sections instead of ~14: hero (order form inline) → demo → live order book → guardrails → FAQ → closing "two doors" CTA. The scroll tour is a footer link.
 - Chunking: the demo explains itself in three synced beats (**snap · bid · sold**); the raw agent log and the money breakdown sit behind labelled toggles.
 - Hierarchy: the hero and demo are the only framed cards; the order book, guardrails (full-width footage band) and FAQ drop card chrome, so evidence reads lighter than the story.
-- Consistency: one primary (filled green) and one secondary (amber outline) button style, and one chevron + label disclosure style, shared by every page from `layout.ts`.
+- Consistency: one primary (raised amber, presses on `:active`) and one secondary (brick outline on cream / amber outline inside screens) button style, and one chevron + label disclosure style, shared by every page from `layout.ts`.
 - Archival footage backdrops (public-domain Moving Image Archive clips in `public/media`, served by the Worker with byte ranges so iOS Safari plays them): lazy-loaded, paused off-screen, stills only for reduced motion / data saver.
+
+**Restyled to cassette-futurism** (landing/`layout.ts`, OpenClaw phase — warms the page beyond the retro-games niche): the page chrome is a warm cream "desk" (`--bg` cream, ink-brown prose in Instrument Sans, brick-red `--accent` for links/live badges); `.card` and `.screen` are amber-phosphor CRTs ringed in beige chassis (`--crt`/`--phos`), and those classes re-scope `--ink`/`--muted`/`--line`/`--accent`/`--font-body` so everything inside them automatically reads amber-and-mono on dark. The hero is the "big tube" (bezel ring + scanlines over footage), the order book lives in a `.device` bezel with a power LED, Scout's number is a price-tag sticker, and `/buy` forms are device cards with receipt-coloured fields. Both channels (`+1 650 315 6536` desk, `@snapflipbot` Telegram) appear in the hero, footer, `/sell` footer, `/qr`, and `/buy/done`.
 
 **Next — audience switch in the hero (after Brainbase judging).** The page still speaks to collectors first, with resellers a link away. Add an **I collect | I resell** segmented switch at the top of the hero that swaps the headline, one-line explanation, primary action and three beats to match the visitor:
 
@@ -127,7 +129,7 @@ Swap a stub for the real implementation without changing its signature. If you m
 | Primary action | Order form (item + max → Start hunting) | Open the Telegram bot (amber button) |
 | Beats | Set · Bid · Win | Snap · Watch · Decide |
 
-Rules: one control, two states, no page change (Primer: maintain context). Remember the choice (URL `?as=resell` for shareable links, plus `localStorage`). Collector stays the default so the booth QR flow is unchanged. Everything below the hero stays shared. Colour follows the existing system: green = collectors, amber = resellers.
+Rules: one control, two states, no page change (Primer: maintain context). Remember the choice (URL `?as=resell` for shareable links, plus `localStorage`). Collector stays the default so the booth QR flow is unchanged. Everything below the hero stays shared. Colour follows the cassette-futurist system: amber = action/phosphor on screens, brick = links and accents on the cream chrome.
 
 **Decision: `/sell` stays a long-form page, no redirect.** The hero switch orients ("is this for me, what do I tap?"); `/sell` answers what a reseller needs before committing (what they net, payout timing, express payout, the one-time Stripe setup). Redirecting would either drop that depth or cram it into the hero, and it would break `/sell` as a shareable destination with its own share card. To keep the two cohesive:
 1. One shared set of reseller copy (headline, explanation, beats) used by both the hero's "I resell" state and the top of `/sell`, so they can't drift.

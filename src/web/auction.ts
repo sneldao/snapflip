@@ -22,22 +22,22 @@ auctionPage.get("/a/:id", (c) =>
         #flash.on { animation: snapflash 0.45s ease-out; }
         @keyframes snapflash { 0% { opacity: 0.9; } 100% { opacity: 0; } }
         .hp { height: 18px; border: 1px solid var(--line); border-radius: 3px; position: relative;
-          overflow: hidden; background: #0a0d0b; margin: 10px 0 4px; }
+          overflow: hidden; background: #1a1008; margin: 10px 0 4px; }
         .hp i { position: absolute; inset: 0 auto 0 0; width: 100%; background: var(--phos);
-          transition: width 0.25s linear, background 0.4s; box-shadow: 0 0 14px rgba(70, 255, 143, 0.35); }
-        .hp.mid i { background: var(--amber); }
+          transition: width 0.25s linear, background 0.4s; box-shadow: 0 0 14px rgba(255, 179, 56, 0.35); }
+        .hp.mid i { background: #d98a0e; }
         .hp.low i { background: var(--red); }
         .hp .seg { position: absolute; inset: 0;
-          background: repeating-linear-gradient(90deg, transparent 0 calc(10% - 1px), rgba(7, 10, 8, 0.85) calc(10% - 1px) 10%); }
+          background: repeating-linear-gradient(90deg, transparent 0 calc(10% - 1px), rgba(23, 14, 5, 0.85) calc(10% - 1px) 10%); }
         #call { font-family: var(--font-display); font-weight: 800; font-size: 1.9rem; letter-spacing: 0.14em;
-          color: var(--amber); text-shadow: 0 0 20px rgba(255, 176, 0, 0.6); margin: 8px 0 0;
+          color: var(--amber); text-shadow: 0 0 20px rgba(255, 179, 56, 0.6); margin: 8px 0 0;
           animation: pulse 0.9s ease-in-out infinite; }
         #verdict { font-family: var(--font-display); font-weight: 800; font-size: 1.6rem; letter-spacing: 0.1em; margin: 10px 0 0; }
-        #verdict.win { color: var(--phos); text-shadow: 0 0 22px rgba(70, 255, 143, 0.55); }
+        #verdict.win { color: var(--phos); text-shadow: 0 0 22px rgba(255, 179, 56, 0.55); }
         #verdict.drop { color: var(--red); }
         .agents { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 6px; }
         .chip-a { display: flex; align-items: center; gap: 10px; border: 1px solid var(--line); border-radius: 4px;
-          padding: 7px 12px 7px 8px; background: rgba(70, 255, 143, 0.05); }
+          padding: 7px 12px 7px 8px; background: rgba(255, 179, 56, 0.05); }
         .chip-a.out { opacity: 0.38; background: transparent; }
         .chip-a.out .nm { text-decoration: line-through; }
         .chip-a .nm { font-family: var(--font-num); font-size: 1.1rem; line-height: 1; }

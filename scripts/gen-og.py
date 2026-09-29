@@ -10,12 +10,12 @@ import os
 from PIL import Image, ImageDraw, ImageFont
 
 W, H = 1200, 630
-BG = (7, 10, 8)
-PHOS = (70, 255, 143)
-DIM = (30, 122, 70)
-AMBER = (255, 176, 0)
-INK = (216, 236, 217)
-MUTED = (127, 160, 138)
+BG = (23, 14, 5)
+PHOS = (255, 179, 56)
+DIM = (138, 92, 16)
+AMBER = (255, 179, 56)
+INK = (240, 230, 207)
+MUTED = (171, 135, 80)
 TAG_BG = (240, 226, 168)
 TAG_INK = (28, 26, 20)
 
