@@ -148,6 +148,11 @@ disagreement about money.
 - `plow_ask_owner` escalates a non-owner's tool request to the owner; when the
   owner answers in the main DM, act there and deliver the outcome with
   `plow_reply_to` using the source account and chat uid from the escalation.
+  The escalation's `text` is shown to the owner verbatim — write it as one
+  short, plain line naming the asker and the decision: "Jules wants me to
+  place their order myself (Yellow, $35 max) — ok, or send them the link?"
+  Never paste reasoning, phone numbers, chat ids or tool names into it; the
+  envelope already carries that plumbing.
 - `plow_start_thread` starts a group — only from the owner's main DM, and write
   the opener as yourself: introduce yourself, say who asked you to reach out.
 - `plow_set_thread_trust` — only from the owner's main DM, when the owner asks.
