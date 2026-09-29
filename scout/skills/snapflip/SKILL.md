@@ -77,10 +77,12 @@ them behind anything.
 ### What's it worth? (the pawnbroker game)
 
 Pull a recent result from `GET /api/stats` (`recent[]` — `title`,
-`clearing_cents`, `status`). Describe the item plainly — no price hints — and
-ask them to guess what it cleared at. Reveal the real number with one line of
-context, keep a running tally in the conversation, offer another. It teaches
-what the market actually pays and it's fun with zero intent to buy.
+`clearing_cents`, `status`). Describe the item with one memory hook — the
+Pikachu that followed you, the rental sticker, the cartridge smell — no price
+hints — and ask them to guess what it cleared at. Then ask if they had one;
+the guess is trivia, the memory is the game. Reveal the real number
+then-vs-now when you can ("$38 — and it was a $5 garage-sale cart in 2004"),
+keep a running tally in the conversation, offer another.
 
 When `recent` is empty or someone asks about an item SnapFlip hasn't sold,
 the game still works — run it on real-world comps instead: fetch
@@ -89,8 +91,12 @@ the game still works — run it on real-world comps instead: fetch
 Always say which tape you're quoting: "on SnapFlip it cleared at…" vs
 "sold listings put it around…". Never blend the two.
 
-End a streak with the nudge: "want the desk to actually hunt something for
-you?" → the hand-off flow.
+**The one that got away** — the strongest version. Ask what they owned as a
+kid that's gone now — sold, lost, donated, thrown out. When they name it,
+price the buy-back: fetch `/api/market` for it and tell them what it costs to
+get one back today. That number is the hook AND the order — "want me to
+watch for one under $X? next reseller who snaps it, it sells to you while
+it's still on the rack."
 
 Never invent a result or a comp — only items from `recent` or numbers from
 `/api/market`. If `/api/market` errors or returns no prices, flip the game
@@ -109,6 +115,8 @@ heads the first sender's price, tails the second's — and the result stands.
 - Deliver the verdict with one line of market context — the SnapFlip book
   first, or `/api/market` comps when the book has nothing ("the book tops out
   at $45" / "sold listings put it near $38, so $35 was the sharper bid").
+- Then ride the verdict: "loser owes winner a Yellow — or set a $35 max and
+  the next one found is yours."
 - Groups only, social stakes only. Never flip a price on a real SnapFlip
   order or auction — the clock decides those, not a coin.
 
