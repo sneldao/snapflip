@@ -485,7 +485,7 @@ landing.get("/", async (c) => {
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#070a08" />
+    <meta name="theme-color" content="#170e05" />
     <meta name="description" content="SnapFlip cinematic tour — follow a $6 thrift find to a $38 sale as you scroll." />
     <meta property="og:type" content="website" />
     <meta property="og:title" content="SnapFlip tour: $6 → $38 as you scroll" />
@@ -497,32 +497,32 @@ landing.get("/", async (c) => {
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;800&family=Share+Tech+Mono&family=VT323&display=swap" rel="stylesheet" />
     <style>
-      :root { color-scheme: dark; --bg: #070a08; --panel: #0d130e; --line: #1f3a28; --line-hi: #2f5a3c;
-        --ink: #d8ecd9; --muted: #7fa08a; --phos: #46ff8f; --phos-dim: #1e7a46; --amber: #ffb000; --red: #ff5f5f;
+      :root { color-scheme: dark; --bg: #170e05; --panel: #211507; --line: #4c3314; --line-hi: #6e4a1c;
+        --ink: #f0d6a0; --muted: #ab8750; --phos: #ffb338; --phos-dim: #8a5c10; --amber: #ffb338; --red: #ff5f5f;
         --font-body: "Share Tech Mono", ui-monospace, monospace; --font-display: "Orbitron", ui-monospace, monospace;
         --font-num: "VT323", ui-monospace, monospace; }
       * { box-sizing: border-box; }
       html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink); font-family: var(--font-body); }
       .fixed-bg { width: 100vw; height: 100vh; position: fixed; inset: 0; overflow: hidden; background: #000; z-index: 0; }
       .fixed-bg svg { border-radius: 2.5vh; width: 50%; top: 5%; height: 90%; position: absolute; left: 25%;
-        background: #070a08; border: 1px solid var(--line); }
+        background: #170e05; border: 1px solid var(--line); }
       @media (max-aspect-ratio: 1.5) { .fixed-bg svg { left: 9%; width: 82%; } }
       .hud { position: fixed; inset: 0; z-index: 2; pointer-events: none; }
-      .hud .frame { position: absolute; inset: 4vh 6vw; border: 1px solid rgba(70,255,143,0.22); border-radius: 12px; }
+      .hud .frame { position: absolute; inset: 4vh 6vw; border: 1px solid rgba(255,179,56,0.22); border-radius: 12px; }
       .hud .frame::before, .hud .frame::after { content: ""; position: absolute; width: 22px; height: 22px; border: 2px solid var(--phos); }
       .hud .frame::before { top: -2px; left: -2px; border-right: 0; border-bottom: 0; }
       .hud .frame::after { bottom: -2px; right: -2px; border-left: 0; border-top: 0; }
       .hud-top { position: absolute; top: calc(4vh + 12px); left: 0; right: 0; display: flex; justify-content: center; }
       .hud-pill { pointer-events: auto; display: inline-flex; align-items: center; gap: 8px; font-family: var(--font-display);
         font-size: 0.68rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted);
-        border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px; background: rgba(7,10,8,0.8); text-decoration: none; }
+        border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px; background: rgba(23,14,5,0.8); text-decoration: none; }
       .hud-hint { position: absolute; bottom: calc(4vh + 10px); left: 0; right: 0; text-align: center;
         font-family: var(--font-display); font-size: 0.68rem; letter-spacing: 0.3em; color: var(--muted); text-transform: uppercase;
         animation: pulse 1.8s ease-in-out infinite; }
       .tour-scroll { width: 100vw; position: relative; z-index: 1; }
       .tour-beat { min-height: 100vh; display: flex; align-items: center; padding: 12vh 6vw; }
       .tour-beat:nth-child(even) { justify-content: flex-end; }
-      .beat-card { max-width: 430px; width: min(430px, 88vw); background: rgba(13,19,14,0.9); backdrop-filter: blur(6px);
+      .beat-card { max-width: 430px; width: min(430px, 88vw); background: rgba(33,21,7,0.9); backdrop-filter: blur(6px);
         border: 1px solid var(--line); border-radius: 8px; padding: 18px 20px;
         opacity: 0.35; transform: translateY(14px); transition: opacity 0.5s ease, transform 0.5s ease, border-color 0.5s ease; }
       .tour-beat.active .beat-card { opacity: 1; transform: none; border-color: var(--line-hi); box-shadow: 0 8px 40px rgba(0,0,0,0.5); }
@@ -533,11 +533,11 @@ landing.get("/", async (c) => {
       .beat-card p { margin: 8px 0; font-size: 0.92rem; }
       .beat-card .muted { color: var(--muted); }
       .beat-card .big { font-family: var(--font-num); font-size: 4rem; line-height: 1; color: var(--phos); }
-      a.button { display: inline-block; background: var(--phos); color: #06130b; border: 1px solid var(--phos); border-radius: 4px;
+      a.button { display: inline-block; background: var(--phos); color: #2a1703; border: 1px solid var(--phos); border-radius: 4px;
         padding: 11px 18px; font-family: var(--font-display); font-weight: 800; font-size: 0.78rem; letter-spacing: 0.1em;
         text-transform: uppercase; text-decoration: none; margin: 4px 8px 0 0; }
       a.button.ghost { background: transparent; color: var(--amber); border-color: #6a5200; }
-      .clock { height: 6px; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; margin: 10px 0 4px; background: rgba(70,255,143,0.06); }
+      .clock { height: 6px; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; margin: 10px 0 4px; background: rgba(255,179,56,0.06); }
       .clock i { display: block; height: 100%; width: 0%; background: linear-gradient(90deg, var(--phos-dim), var(--phos)); transition: width 0.6s ease; }
       .stage-bots { display: flex; gap: 12px; margin-top: 10px; }
       .sb { display: flex; flex-direction: column; align-items: center; gap: 4px; transition: opacity 0.4s; }
@@ -549,10 +549,10 @@ landing.get("/", async (c) => {
         opacity: 0; transition: opacity 0.4s; }
       .stamp.on { opacity: 1; }
       .feed, .depth { list-style: none; padding: 0; margin: 8px 0 0; font-size: 0.88rem; }
-      .feed li { padding: 2px 0; border-bottom: 1px dotted rgba(31,58,40,0.5); }
+      .feed li { padding: 2px 0; border-bottom: 1px dotted rgba(76,51,20,0.5); }
       .depth li { display: flex; align-items: baseline; gap: 10px; padding: 3px 0; }
       .depth .t { flex: 0 0 46%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-      .depth .bar { flex: 1; height: 10px; background: rgba(70, 255, 143, 0.08); border: 1px solid var(--line); border-radius: 2px; overflow: hidden; }
+      .depth .bar { flex: 1; height: 10px; background: rgba(255, 179, 56, 0.08); border: 1px solid var(--line); border-radius: 2px; overflow: hidden; }
       .depth .bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--phos-dim), var(--phos)); }
       .depth .n { flex: 0 0 auto; color: var(--muted); font-size: 0.8rem; }
       .botw { width: 24px; height: 26px; flex: 0 0 auto; }
@@ -574,21 +574,21 @@ landing.get("/", async (c) => {
     <div class="fixed-bg" aria-hidden="true">
       <svg id="tour-svg" viewBox="0 0 1000 1000" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Stylized thrift-rack scene the camera tours">
         <g id="pov-scale"><g id="pov-pan">
-          <rect x="-600" y="-600" width="2200" height="2200" fill="#070a08" />
-          <rect x="-600" y="120" width="2200" height="26" fill="#0d130e" stroke="#1f3a28" />
-          <rect x="-600" y="560" width="2200" height="26" fill="#0d130e" stroke="#1f3a28" />
-          <rect x="80" y="300" width="120" height="260" rx="8" fill="#12241a" stroke="#2f5a3c" />
-          <rect x="230" y="270" width="150" height="290" rx="8" fill="#2a230f" stroke="#ffb000" stroke-width="3" />
+          <rect x="-600" y="-600" width="2200" height="2200" fill="#170e05" />
+          <rect x="-600" y="120" width="2200" height="26" fill="#211507" stroke="#4c3314" />
+          <rect x="-600" y="560" width="2200" height="26" fill="#211507" stroke="#4c3314" />
+          <rect x="80" y="300" width="120" height="260" rx="8" fill="#241708" stroke="#6e4a1c" />
+          <rect x="230" y="270" width="150" height="290" rx="8" fill="#2a230f" stroke="#ffb338" stroke-width="3" />
           <rect x="250" y="300" width="110" height="70" rx="4" fill="#f0e2a8" />
           <text x="305" y="342" text-anchor="middle" font-family="monospace" font-size="34" fill="#1c1a14">$6</text>
           <rect x="250" y="390" width="110" height="130" rx="4" fill="#e8c33a" />
           <text x="305" y="460" text-anchor="middle" font-family="monospace" font-size="26" fill="#1c1a14">PKMN</text>
-          <rect x="420" y="310" width="120" height="250" rx="8" fill="#12241a" stroke="#2f5a3c" />
-          <rect x="580" y="290" width="130" height="270" rx="8" fill="#12241a" stroke="#2f5a3c" />
-          <rect x="750" y="320" width="110" height="240" rx="8" fill="#12241a" stroke="#2f5a3c" />
-          <rect x="230" y="640" width="630" height="120" rx="8" fill="none" stroke="#1e7a46" stroke-dasharray="10 8" />
-          <text x="545" y="712" text-anchor="middle" font-family="monospace" font-size="36" fill="#46ff8f">SOLD $38 · nets $34.20</text>
-          <g class="motion-paths" fill="none" stroke="#46ff8f" stroke-opacity="0.35" stroke-dasharray="8 10" stroke-width="3">
+          <rect x="420" y="310" width="120" height="250" rx="8" fill="#241708" stroke="#6e4a1c" />
+          <rect x="580" y="290" width="130" height="270" rx="8" fill="#241708" stroke="#6e4a1c" />
+          <rect x="750" y="320" width="110" height="240" rx="8" fill="#241708" stroke="#6e4a1c" />
+          <rect x="230" y="640" width="630" height="120" rx="8" fill="none" stroke="#8a5c10" stroke-dasharray="10 8" />
+          <text x="545" y="712" text-anchor="middle" font-family="monospace" font-size="36" fill="#ffb338">SOLD $38 · nets $34.20</text>
+          <g class="motion-paths" fill="none" stroke="#ffb338" stroke-opacity="0.35" stroke-dasharray="8 10" stroke-width="3">
             <path d="M196 434c66-49 230 44 322 18" />
             <path d="M518 452c22-1 228 65 303 56" />
             <path d="M821 508s-81 263-18 399" />
@@ -596,7 +596,7 @@ landing.get("/", async (c) => {
             <path d="M486 860s-160 76-298 17" />
           </g>
           <path id="tour-route" d="M196 434 C262 385 426 478 518 452 C540 451 746 517 821 508 C821 508 740 771 803 907 C803 907 565 843 486 860 C486 860 326 936 188 877" fill="none" stroke="none" />
-          <circle id="tour-focal" class="focal-point" cx="196" cy="434" r="10" fill="#46ff8f" fill-opacity="0.9" />
+          <circle id="tour-focal" class="focal-point" cx="196" cy="434" r="10" fill="#ffb338" fill-opacity="0.9" />
         </g></g>
       </svg>
     </div>
@@ -664,36 +664,38 @@ landing.get("/", async (c) => {
       "SnapFlip: sold before you buy it",
       html`<style>
         .topbar { position: sticky; top: 0; z-index: 30; margin: -14px -20px 14px; padding: 10px 20px;
-          background: rgba(7, 10, 8, 0.88); backdrop-filter: blur(8px);
+          background: rgba(231, 221, 198, 0.9); backdrop-filter: blur(8px);
           border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
         .topbar .live-pill { display: inline-flex; align-items: center; gap: 8px; font-family: var(--font-display);
           font-size: 0.68rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted);
           border: 1px solid var(--line); border-radius: 999px; padding: 5px 12px; }
-        .live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--phos-dim); display: inline-block; }
-        .live-dot.hot { background: var(--phos); box-shadow: 0 0 10px rgba(70,255,143,0.9); animation: pulse 1.6s ease-in-out infinite; }
+        .live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--line-hi); display: inline-block; }
+        .live-dot.hot { background: var(--red); box-shadow: 0 0 10px rgba(192,57,31,0.8); animation: pulse 1.6s ease-in-out infinite; }
         .topbar .spacer { flex: 1; }
         .topnav { display: flex; gap: 12px; align-items: center; font-size: 0.72rem; }
         .topnav a { color: var(--muted); text-decoration: none; letter-spacing: 0.12em; text-transform: uppercase; font-family: var(--font-display); }
-        .topnav a:hover { color: var(--phos); }
+        .topnav a:hover { color: var(--accent); }
         .topbar .mini-cta { padding: 8px 14px; font-size: 0.72rem; }
         .eyebrow { display: inline-flex; align-items: center; gap: 8px; font-family: var(--font-display); font-size: 0.68rem;
           letter-spacing: 0.28em; text-transform: uppercase; color: var(--amber); margin: 6px 0 8px;
-          border: 1px solid #6a5200; border-radius: 999px; padding: 5px 12px; background: rgba(255,176,0,0.06); }
+          border: 1px solid var(--amber); border-radius: 999px; padding: 5px 12px; background: rgba(255,179,56,0.08);
+          text-shadow: 0 1px 8px rgba(23,14,5,0.7); }
         h1 { font-size: clamp(2.2rem, 7vw, 3.2rem); line-height: 1.02; margin: 8px 0 10px; }
         h1 .glow { color: var(--phos); }
         .lede { font-size: 1.02rem; color: var(--ink); max-width: 34em; margin: 0 0 4px; }
         .lede .muted { color: var(--muted); }
         .proof-strip { display: flex; gap: 10px; flex-wrap: wrap; margin: 14px 0 4px; }
-        .proof { flex: 1; min-width: 150px; border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px;
-          background: rgba(70,255,143,0.04); }
+        .proof { flex: 1; min-width: 150px; border: 1px solid #0a0502; border-radius: 8px; padding: 10px 12px;
+          background: radial-gradient(ellipse at 50% 20%, var(--crt2) 0%, var(--crt) 80%);
+          box-shadow: inset 0 0 22px rgba(0,0,0,0.5); }
         .proof b { display: block; font-family: var(--font-num); font-size: 1.7rem; font-weight: 400; color: var(--phos); line-height: 1; }
         .proof.amber b { color: var(--amber); }
-        .proof span { font-size: 0.78rem; color: var(--muted); }
+        .proof span { font-size: 0.78rem; color: #ab8750; }
         .cta-row { display: flex; gap: 12px; flex-wrap: wrap; margin: 18px 0 6px; }
         .button { position: relative; }
-        .button.ghost { background: transparent; color: var(--amber); border-color: #6a5200; }
-        .button.ghost:hover { background: rgba(255,176,0,0.1); border-color: var(--amber);
-          box-shadow: 0 0 16px rgba(255,176,0,0.25); }
+        .button.ghost { background: transparent; color: var(--accent); border-color: var(--accent); box-shadow: none; }
+        .button.ghost:hover { background: rgba(168,68,28,0.1); }
+        .card .button.ghost:hover, .hero .button.ghost:hover { background: rgba(255,179,56,0.12); }
         .cta-note { font-size: 0.8rem; color: var(--muted); margin: 6px 0 0; }
         .park-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: stretch; margin-top: 10px; }
         .park-row input[name="sku"] { flex: 2 1 200px; width: auto; }
@@ -703,16 +705,25 @@ landing.get("/", async (c) => {
         .has-bd { position: relative; overflow: hidden; isolation: isolate; }
         .has-bd > .bd { position: absolute; inset: 0; z-index: -1; pointer-events: none; }
         .bd video { width: 100%; height: 100%; object-fit: cover; display: block; filter: saturate(1.15) contrast(1.05); transform: scale(1.04); }
-        .bd::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(7,10,8,0.30), rgba(7,10,8,0.62)); }
-        .hero { margin: -6px -20px 18px; padding: 72px 24px 30px; min-height: min(78vh, 640px); display: flex; flex-direction: column; justify-content: flex-end;
-          align-items: flex-start; border-radius: 0 0 14px 14px; border-bottom: 1px solid var(--line); }
-        .hero > .bd::after { background: linear-gradient(90deg, rgba(7,10,8,0.88) 0%, rgba(7,10,8,0.62) 48%, rgba(7,10,8,0.18) 100%),
-          linear-gradient(0deg, rgba(7,10,8,0.85) 0%, rgba(7,10,8,0) 55%); }
+        .bd::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(23,14,5,0.30), rgba(23,14,5,0.62)); }
+        /* The hero is the big tube at the top of the desk: bezel ring + scanlines over the footage. */
+        .hero { margin: 4px 0 20px; padding: 72px 24px 30px; min-height: min(78vh, 640px); display: flex; flex-direction: column; justify-content: flex-end;
+          align-items: flex-start; border-radius: 12px; border: 1px solid #0a0502;
+          box-shadow: 0 0 0 6px var(--chassis), 0 0 0 7px var(--line-hi), 0 12px 26px rgba(58, 42, 16, 0.32); }
+        .hero::after { content: ""; position: absolute; inset: 0; border-radius: 11px; z-index: 0; pointer-events: none;
+          background: repeating-linear-gradient(0deg, rgba(0,0,0,0.13) 0 1px, transparent 1px 3px); }
+        .hero > *:not(.bd) { position: relative; z-index: 1; }
+        .hero > .bd::after { background: linear-gradient(90deg, rgba(23,14,5,0.88) 0%, rgba(23,14,5,0.62) 48%, rgba(23,14,5,0.18) 100%),
+          linear-gradient(0deg, rgba(23,14,5,0.85) 0%, rgba(23,14,5,0) 55%); }
+        .hero h1 { color: #f6ead0; }
+        .hero .lede { color: #ecdfc2; }
+        .hero .cta-note { color: #bda87e; }
         .hero h1, .hero .lede, .hero .cta-note { text-shadow: 0 2px 14px rgba(0,0,0,0.85); max-width: 32em; }
+        .hero a:not(.button) { color: var(--phos); }
         .hero .park-row { max-width: 620px; width: 100%; }
-        .card.has-bd, .stage.has-bd { background: #050806; }
-        #trust > .bd::after, #doors > .bd::after { background: linear-gradient(90deg, rgba(7,10,8,0.86) 0%, rgba(7,10,8,0.55) 60%, rgba(7,10,8,0.25) 100%); }
-        .stage > .bd::after { background: radial-gradient(ellipse at 50% 50%, rgba(7,10,8,0.62) 0%, rgba(7,10,8,0.25) 70%); }
+        .card.has-bd, .stage.has-bd { background: #150d05; }
+        #trust > .bd::after, #doors > .bd::after { background: linear-gradient(90deg, rgba(23,14,5,0.86) 0%, rgba(23,14,5,0.55) 60%, rgba(23,14,5,0.25) 100%); }
+        .stage > .bd::after { background: radial-gradient(ellipse at 50% 50%, rgba(23,14,5,0.62) 0%, rgba(23,14,5,0.25) 70%); }
         .stage .big, .stage .clock-label, .stage .sn { text-shadow: 0 2px 10px rgba(0,0,0,0.9); }
         .stage .sold-bd { opacity: 0; transition: opacity 0.5s ease; }
         .stage.sold .sold-bd { opacity: 1; }
@@ -736,20 +747,21 @@ landing.get("/", async (c) => {
         .band { margin: 38px 0; }
         .sec-label { display: flex; align-items: center; gap: 10px; margin: 0 0 12px; font-family: var(--font-display); font-size: 0.72rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--muted); }
         .band-bd { margin: 38px -20px; padding: 34px 20px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+        #trust .sec-label { color: #d9c9a4; text-shadow: 0 1px 8px rgba(0,0,0,0.8); }
         #trust .rails .r { border: 0; border-left: 2px solid var(--phos-dim); border-radius: 0; background: transparent; padding: 2px 0 2px 12px; text-shadow: 0 2px 10px rgba(0,0,0,0.9); }
-        #trust .rails .r span { color: var(--ink); opacity: 0.85; }
+        #trust .rails .r span { color: #ecdfc2; opacity: 0.85; }
         details.more summary { cursor: pointer; font-size: 0.78rem; color: var(--muted); letter-spacing: 0.14em; text-transform: uppercase; font-family: var(--font-display); }
         details.more p { font-size: 0.84rem; margin: 8px 0 0; }
-        .doors-h { font-family: var(--font-display); font-weight: 800; font-size: 1.5rem; margin: 0; color: var(--ink); text-shadow: 0 2px 12px rgba(0,0,0,0.85); }
+        .doors-h { font-family: var(--font-display); font-weight: 800; font-size: 1.5rem; margin: 0; color: #f6ead0; text-shadow: 0 2px 12px rgba(0,0,0,0.85); }
         @media (max-width: 719px) {
           .hero { min-height: 70vh; padding-top: 56px; }
-          .hero > .bd::after { background: linear-gradient(0deg, rgba(7,10,8,0.92) 0%, rgba(7,10,8,0.55) 60%, rgba(7,10,8,0.3) 100%); }
+          .hero > .bd::after { background: linear-gradient(0deg, rgba(23,14,5,0.92) 0%, rgba(23,14,5,0.55) 60%, rgba(23,14,5,0.3) 100%); }
         }
-        .has-bd .qrbox { position: relative; }
+        .has-bd .qrbox, .card .qrbox { position: relative; z-index: 3; }
         .funnel { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 14px 0 0; }
         .funnel .cell { border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px; }
-        .funnel .cell.sell { border-color: #6a5200; background: rgba(255,176,0,0.04); }
-        .funnel .cell.buy { border-color: var(--line-hi); background: rgba(70,255,143,0.04); }
+        .funnel .cell.sell { border-color: #6a5200; background: rgba(255,179,56,0.04); }
+        .funnel .cell.buy { border-color: var(--line-hi); background: rgba(255,179,56,0.04); }
         .funnel .k { font-family: var(--font-display); font-size: 0.66rem; letter-spacing: 0.2em; text-transform: uppercase; margin-bottom: 4px; }
         .funnel .buy .k { color: var(--phos); }
         .funnel .sell .k { color: var(--amber); }
@@ -760,20 +772,20 @@ landing.get("/", async (c) => {
         .stage .tag { padding: 2px 14px 4px 30px; margin-bottom: 8px; }
         .tag .tagtxt { color: #1c1a14; text-shadow: none; font-family: var(--font-num); font-size: 1.25rem; }
         #stage-price { font-size: 4.6rem; }
-        .clock { height: 6px; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; margin: 8px 4px 4px; background: rgba(70,255,143,0.06); }
+        .clock { height: 6px; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; margin: 8px 4px 4px; background: rgba(255,179,56,0.06); }
         .clock i { display: block; height: 100%; width: 0%; background: linear-gradient(90deg, var(--phos-dim), var(--phos)); transition: width 0.5s ease; }
         .clock-label { font-size: 0.72rem; color: var(--muted); letter-spacing: 0.14em; text-transform: uppercase; font-family: var(--font-display); }
         .stage-bots { display: flex; justify-content: center; gap: 14px; margin-top: 10px; }
         .sb { display: flex; flex-direction: column; align-items: center; gap: 5px; transition: opacity 0.3s; }
         .sb .sn { font-family: var(--font-num); font-size: 0.95rem; color: var(--muted); line-height: 1; }
         .sb.out { opacity: 0.32; filter: grayscale(1); }
-        .sb.win .botw { filter: drop-shadow(0 0 9px rgba(70, 255, 143, 0.9)); }
-        .sb.win .sn { color: var(--phos); text-shadow: 0 0 8px rgba(70, 255, 143, 0.6); }
+        .sb.win .botw { filter: drop-shadow(0 0 9px rgba(255, 179, 56, 0.9)); }
+        .sb.win .sn { color: var(--phos); text-shadow: 0 0 8px rgba(255, 179, 56, 0.6); }
         .stamp { position: absolute; top: 36%; left: 50%; transform: translate(-50%, -50%) rotate(-12deg);
           font-family: var(--font-display); font-weight: 800; font-size: 1.6rem; letter-spacing: 0.08em;
           color: var(--amber); border: 2px solid var(--amber); border-radius: 4px; padding: 4px 14px;
-          background: rgba(7, 10, 8, 0.88); opacity: 0; pointer-events: none;
-          text-shadow: 0 0 12px rgba(255, 176, 0, 0.7); box-shadow: 0 0 16px rgba(255, 176, 0, 0.25); }
+          background: rgba(23, 14, 5, 0.88); opacity: 0; pointer-events: none;
+          text-shadow: 0 0 12px rgba(255, 179, 56, 0.7); box-shadow: 0 0 16px rgba(255, 179, 56, 0.25); }
         .stamp.on { opacity: 1; animation: stampin 0.35s cubic-bezier(0.2, 1.6, 0.4, 1) both; }
         @keyframes stampin { from { transform: translate(-50%, -50%) rotate(-12deg) scale(2.2); opacity: 0; } }
         .reel { font-family: var(--font-num); font-size: 1.05rem; line-height: 1.7; min-height: 17em;
@@ -827,13 +839,13 @@ landing.get("/", async (c) => {
         .tag { display: inline-block; background: #f0e2a8; border-radius: 4px; padding: 2px 18px 6px 34px;
           transform: rotate(-2deg); position: relative; box-shadow: 2px 3px 0 rgba(0, 0, 0, 0.4); }
         .tag::before { content: ""; position: absolute; left: 11px; top: 50%; margin-top: -6px;
-          width: 11px; height: 11px; border-radius: 50%; background: #070a08;
+          width: 11px; height: 11px; border-radius: 50%; background: #170e05;
           box-shadow: inset 0 0 0 3px #c8b877; }
         .tag .big { color: #1c1a14; text-shadow: none; font-size: 3.8rem; }
         .turbo-badge { position: fixed; right: 14px; bottom: 12px; z-index: 40; font-family: var(--font-display);
-          font-size: 0.8rem; letter-spacing: 0.2em; color: var(--amber); text-shadow: 0 0 12px rgba(255, 176, 0, 0.8);
+          font-size: 0.8rem; letter-spacing: 0.2em; color: var(--amber); text-shadow: 0 0 12px rgba(255, 179, 56, 0.8);
           animation: pulse 0.9s ease-in-out infinite; }
-        body.turbo .reel { text-shadow: 0 0 12px rgba(70, 255, 143, 0.55); }
+        body.turbo .reel { text-shadow: 0 0 12px rgba(255, 179, 56, 0.55); }
         @media (max-width: 719px) {
           .demo-cols, .ob-cols, .rails, .vs, .funnel { grid-template-columns: minmax(0, 1fr); }
           .money { grid-template-columns: 1fr 1fr; }
@@ -847,7 +859,7 @@ landing.get("/", async (c) => {
       <div class="topbar">
         <span class="live-pill"><i class="live-dot" id="live-dot"></i> <span id="hero-demand">order book opens live — be #1</span></span>
         <span class="spacer"></span>
-        <a class="button mini-cta" href="/sell" style="background:transparent">I resell</a>
+        <a class="button ghost mini-cta" href="/sell">I resell</a>
         <a class="button primary mini-cta" href="/buy">Set order</a>
       </div>
       <section class="hero has-bd">
@@ -915,26 +927,33 @@ landing.get("/", async (c) => {
       </div>
       <section class="band" id="book">
         <p class="sec-label">Live order book <span class="badge live">real</span></p>
-        <div class="row" id="ob-stats" hidden>
-          <div><div class="tag"><div class="big" id="demand">$0</div></div><div class="muted">standing demand</div></div>
-          <div><div class="big" id="collectors">0</div><div class="muted">collectors</div></div>
-          <div><div class="big" id="tx">0</div><div class="muted">sales</div></div>
+        <div class="device">
+          <div class="screen">
+            <div class="row" id="ob-stats" hidden>
+              <div><div class="tag"><div class="big" id="demand">$0</div></div><div class="muted">standing demand</div></div>
+              <div><div class="big" id="collectors">0</div><div class="muted">collectors</div></div>
+              <div><div class="big" id="tx">0</div><div class="muted">sales</div></div>
+            </div>
+            <div class="ob-cols" id="ob-cols">
+              <div><div class="obsub">Recent sales</div><ul class="feed" id="tape"><li>…</li></ul></div>
+              <div><div class="obsub">Standing demand</div><ul class="depth" id="skus"></ul></div>
+            </div>
+            <div id="ob-empty" hidden>
+              <p class="muted" style="margin:4px 0 10px">The book opens live at the event. Early collectors set the price — every reseller then hunts for you.</p>
+            </div>
+          </div>
         </div>
-        <div class="ob-cols" id="ob-cols">
-          <div><div class="obsub">Recent sales</div><ul class="feed" id="tape"><li>…</li></ul></div>
-          <div><div class="obsub">Standing demand</div><ul class="depth" id="skus"></ul></div>
-        </div>
-        <div id="ob-empty" hidden>
-          <p class="muted" style="margin:4px 0 10px">The book opens live at the event. Early collectors set the price — every reseller then hunts for you.</p>
-        </div>
-        <div class="obsub" style="margin-top:12px">Agents can hunt today</div>
+        <div class="obsub" style="margin-top:14px">Agents can hunt today</div>
         <div class="chips" id="catalog-chips"></div>
       </section>
       <section class="band" id="scout">
         <p class="sec-label">Text the desk <span class="badge live">live</span></p>
         <p style="margin:0"><strong>Scout is our first hire</strong> — an agent on the collector desk, reachable like a person. Text it what you're hunting; it reads this book, advises a max, and hands you a prefilled order.</p>
-        <p style="margin:12px 0 0"><a class="button" href="sms:+16503156536">✆ Text Scout — +1 650 315 6536</a></p>
-        <p class="muted" style="margin:10px 0 0">Not ready to order? Play it: text "guess the price" and it deals a real cleared auction — pawnbroker rules, you call it, it shows the tape. Two of you arguing over a fair price? Pull it into the thread and it'll flip a coin for it.</p>
+        <p style="margin:14px 0 0; display:flex; align-items:center; gap:16px; flex-wrap:wrap">
+          <a class="button primary" href="sms:+16503156536">✆ Text Scout</a>
+          <a class="tag" href="sms:+16503156536" style="text-decoration:none"><span class="tagtxt">+1 650 315 6536</span></a>
+        </p>
+        <p class="muted" style="margin:12px 0 0">Not ready to order? Play it: text "guess the price" and it deals a real cleared auction — pawnbroker rules, you call it, it shows the tape. Two of you arguing over a fair price? Pull it into the thread and it'll flip a coin for it.</p>
       </section>
       <section class="band band-bd has-bd" id="trust">
         ${bd("cash-count")}
@@ -991,12 +1010,14 @@ landing.get("/sell", (c) => {
       "SnapFlip for resellers: sold before you buy it",
       html`<style>
         .eyebrow { display: inline-flex; align-items: center; gap: 8px; font-family: var(--font-display); font-size: 0.68rem;
-          letter-spacing: 0.28em; text-transform: uppercase; color: var(--amber); margin: 6px 0 8px;
-          border: 1px solid #6a5200; border-radius: 999px; padding: 5px 12px; background: rgba(255,176,0,0.06); }
+          letter-spacing: 0.28em; text-transform: uppercase; color: var(--accent); margin: 6px 0 8px;
+          border: 1px solid var(--accent); border-radius: 999px; padding: 5px 12px; background: rgba(168,68,28,0.06); }
         h1 { font-size: clamp(2rem, 6vw, 2.8rem); line-height: 1.05; }
-        h1 .glow { color: var(--amber); }
-        .button.ghost { background: transparent; color: var(--amber); border-color: #6a5200; }
-        .button.ghost:hover { background: rgba(255,176,0,0.1); border-color: var(--amber); }
+        h1 .glow { color: var(--accent); }
+        .button.ghost { background: transparent; color: var(--accent); border-color: var(--accent); box-shadow: none; }
+        .button.ghost:hover { background: rgba(168,68,28,0.08); }
+        .card .button.ghost { color: var(--amber); border-color: var(--amber); }
+        .card .button.ghost:hover { background: rgba(255,179,56,0.1); }
         .steps { display: flex; gap: 18px; flex-wrap: wrap; }
         .step { flex: 1; min-width: 180px; border-left: 2px solid #6a5200; padding-left: 12px; }
         .step .num { font-family: var(--font-num); font-size: 2rem; color: var(--amber); display: block; line-height: 1; }
@@ -1045,8 +1066,8 @@ landing.get("/qr", async (c) => {
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#070a08" />
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%23070a08'/%3E%3Ctext x='2' y='12.5' font-family='monospace' font-size='11' font-weight='bold' fill='%2346ff8f'%3ES%3E%3C/text%3E%3C/svg%3E" />
+    <meta name="theme-color" content="#170e05" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%23170e05'/%3E%3Ctext x='2' y='12.5' font-family='monospace' font-size='11' font-weight='bold' fill='%23ffb338'%3ES%3E%3C/text%3E%3C/svg%3E" />
     <meta property="og:type" content="website" />
     <meta property="og:title" content="SnapFlip booth" />
     <meta property="og:image" content="${c.env.PUBLIC_URL}/og.png" />
@@ -1056,21 +1077,21 @@ landing.get("/qr", async (c) => {
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;800&family=Share+Tech+Mono&family=VT323&display=swap" rel="stylesheet" />
     <style>
-      body { margin: 0; background: #070a08; color: #d8ecd9; font-family: "Share Tech Mono", ui-monospace, monospace;
+      body { margin: 0; background: #170e05; color: #f0d6a0; font-family: "Share Tech Mono", ui-monospace, monospace;
              min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
-      .mark { font-family: "Orbitron", monospace; font-weight: 800; font-size: 1.1rem; letter-spacing: 0.32em; text-transform: uppercase; color: #46ff8f; text-shadow: 0 0 14px rgba(70, 255, 143, 0.35); margin-bottom: 18px; }
-      .mark::before { content: "> "; color: #1e7a46; }
+      .mark { font-family: "Orbitron", monospace; font-weight: 800; font-size: 1.1rem; letter-spacing: 0.32em; text-transform: uppercase; color: #ffb338; text-shadow: 0 0 14px rgba(255, 179, 56, 0.35); margin-bottom: 18px; }
+      .mark::before { content: "> "; color: #8a5c10; }
       .mark .cursor { animation: blink 1.15s steps(1) infinite; }
       @keyframes blink { 50% { opacity: 0; } }
-      h1 { font-family: "Orbitron", monospace; font-weight: 800; font-size: 3rem; margin: 0 24px 24px; max-width: 900px; color: #d8ecd9; text-shadow: 0 0 24px rgba(70, 255, 143, 0.2); }
-      .qr { background: #fff; border-radius: 12px; padding: 16px; line-height: 0; box-shadow: 0 0 40px rgba(70, 255, 143, 0.18); }
+      h1 { font-family: "Orbitron", monospace; font-weight: 800; font-size: 3rem; margin: 0 24px 24px; max-width: 900px; color: #f0d6a0; text-shadow: 0 0 24px rgba(255, 179, 56, 0.2); }
+      .qr { background: #fff; border-radius: 12px; padding: 16px; line-height: 0; box-shadow: 0 0 40px rgba(255, 179, 56, 0.18); }
       .qr svg { width: min(60vh, 60vw); height: auto; }
-      .url { font-family: "Orbitron", monospace; font-weight: 600; font-size: 1.6rem; letter-spacing: 0.08em; margin-top: 16px; color: #46ff8f; text-shadow: 0 0 18px rgba(70, 255, 143, 0.35); }
-      .stats { font-family: "VT323", monospace; font-size: 1.9rem; color: #7fa08a; margin-top: 12px; }
-      .stats span { color: #46ff8f; }
-      .soon { font-family: "VT323", monospace; font-size: 1.4rem; color: #1e7a46; letter-spacing: 0.16em; margin-top: 16px; text-transform: uppercase; }
-      .coin { font-family: "VT323", monospace; font-size: 2.2rem; color: #ffb000; margin-top: 20px;
-              letter-spacing: 0.12em; text-shadow: 0 0 14px rgba(255, 176, 0, 0.6); animation: blink 1.1s steps(1) infinite; }
+      .url { font-family: "Orbitron", monospace; font-weight: 600; font-size: 1.6rem; letter-spacing: 0.08em; margin-top: 16px; color: #ffb338; text-shadow: 0 0 18px rgba(255, 179, 56, 0.35); }
+      .stats { font-family: "VT323", monospace; font-size: 1.9rem; color: #ab8750; margin-top: 12px; }
+      .stats span { color: #ffb338; }
+      .soon { font-family: "VT323", monospace; font-size: 1.4rem; color: #8a5c10; letter-spacing: 0.16em; margin-top: 16px; text-transform: uppercase; }
+      .coin { font-family: "VT323", monospace; font-size: 2.2rem; color: #ffb338; margin-top: 20px;
+              letter-spacing: 0.12em; text-shadow: 0 0 14px rgba(255, 179, 56, 0.6); animation: blink 1.1s steps(1) infinite; }
       @media (prefers-reduced-motion: reduce) { .mark .cursor, .coin { animation: none; } }
     </style>
   </head>

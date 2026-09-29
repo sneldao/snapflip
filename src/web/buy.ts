@@ -159,8 +159,8 @@ buy.post("/buy", async (c) => {
 // Thrift-store till receipt: paper card, torn edges, barcode keyed to the order id.
 const receiptStyle = html`<style>
   .receipt { background: #f4efe0; color: #1c1a14; border-radius: 2px; padding: 16px 20px;
-    margin: 22px 0; position: relative; box-shadow: 0 3px 14px rgba(0, 0, 0, 0.5);
-    font-family: var(--font-body); }
+    margin: 22px 0; position: relative; box-shadow: 0 3px 14px rgba(58, 42, 16, 0.3);
+    font-family: var(--font-mono); }
   .receipt::before, .receipt::after { content: ""; position: absolute; left: 0; right: 0; height: 7px;
     background: linear-gradient(45deg, #f4efe0 5px, transparent 5px) 0 0 / 11px 11px repeat-x,
       linear-gradient(-45deg, #f4efe0 5px, transparent 5px) 0 0 / 11px 11px repeat-x; }
