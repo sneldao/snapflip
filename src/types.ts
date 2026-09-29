@@ -34,6 +34,8 @@ export interface Env {
   STRIPE_WEBHOOK_SECRET: string;
   BRAINBASE_LABS_API_KEY?: string;
   PRICECHARTING_API_KEY?: string;
+  /** Web search for real-world sold-price comps (/api/market). Absent = endpoint 503s. */
+  TAVILY_API_KEY?: string;
 }
 
 // Lets the Agents SDK classes (typed against Cloudflare.Env) see our bindings.

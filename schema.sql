@@ -152,3 +152,16 @@ CREATE TABLE IF NOT EXISTS category_interest (
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   PRIMARY KEY (seller_id, category)
 );
+
+-- External market comps for the desk's price game (Tavily web search over sold
+-- listings). Cached per normalized query for 24h; market_calls rate-limits the
+-- uncached path so a hot endpoint can't burn the search quota.
+CREATE TABLE IF NOT EXISTS market_cache (
+  query TEXT PRIMARY KEY,                    -- normalized: lowercase, collapsed whitespace
+  payload TEXT NOT NULL,                     -- the JSON response body
+  fetched_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
+CREATE TABLE IF NOT EXISTS market_calls (
+  at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);

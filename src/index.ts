@@ -1,6 +1,7 @@
 // Router only. Each workstream owns its sub-router; add routes there, not here.
 import { Hono } from "hono";
 import { auctions } from "./auction";
+import { market } from "./market";
 import { handleMatchBatch } from "./match";
 import { mcpAuth } from "./mcp";
 import { orders } from "./orders";
@@ -30,6 +31,7 @@ app.use("*", async (c, next) => {
 });
 
 app.route("/", landing); // D
+app.route("/", market); // D
 app.route("/", buy); // D
 app.route("/", auctionPage); // A
 app.route("/", telegram); // A

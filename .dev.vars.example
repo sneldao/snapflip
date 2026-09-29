@@ -17,3 +17,5 @@ STRIPE_SECRET_KEY=
 STRIPE_WEBHOOK_SECRET=
 BRAINBASE_LABS_API_KEY=
 PRICECHARTING_API_KEY=
+# Powers GET /api/market (real-world sold-price comps for the desk's price game).
+TAVILY_API_KEY=

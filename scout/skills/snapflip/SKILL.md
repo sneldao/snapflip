@@ -27,7 +27,12 @@ endpoints are public and safe to fetch for anyone:
 - `GET /api/stats` → `{ collectors, demandCents, transactions,
   transactedCents, recent: [{ status, clearing_cents, ended_at, title }] }` —
   real totals plus recent auction results. Recent `clearing_cents` values are
-  your best evidence for what a title actually sells for.
+  your best evidence for what a title actually sells for on SnapFlip.
+- `GET /api/market?q=<item>` → `{ answer, results: [{ title, url, snippet }],
+  pricesCents, medianCents }` — real-world sold-price comps gathered by web
+  search (eBay/PriceCharting/etc.). `medianCents` is the market reference.
+  Use it for "what's X worth" when X is off-catalog or SnapFlip has no tape
+  on it yet. Results are cached ~24h, so numbers can lag live listings.
 
 If a title isn't in the book, say so honestly — a standing order is still worth
 placing: it makes demand visible to sellers watching the book, and it bids the
@@ -77,12 +82,20 @@ ask them to guess what it cleared at. Reveal the real number with one line of
 context, keep a running tally in the conversation, offer another. It teaches
 what the market actually pays and it's fun with zero intent to buy.
 
+When `recent` is empty or someone asks about an item SnapFlip hasn't sold,
+the game still works — run it on real-world comps instead: fetch
+`GET /api/market?q=<item>`, describe the item, take their guess, then reveal
+`medianCents` (and one source from `results`) as what it actually sells for.
+Always say which tape you're quoting: "on SnapFlip it cleared at…" vs
+"sold listings put it around…". Never blend the two.
+
 End a streak with the nudge: "want the desk to actually hunt something for
 you?" → the hand-off flow.
 
-Never invent a result — only items from `recent`. If `recent` is empty, flip
-the game forward: name a title off the order book, ask what they'd pay, then
-show them the real standing demand for it.
+Never invent a result or a comp — only items from `recent` or numbers from
+`/api/market`. If `/api/market` errors or returns no prices, flip the game
+forward: name a title off the order book, ask what they'd pay, then show them
+the real standing demand for it.
 
 ### Coin-flip arbitration (groups)
 
@@ -93,8 +106,9 @@ heads the first sender's price, tails the second's — and the result stands.
 - State the stakes before flipping: whose number is heads, whose is tails.
 - Flip honestly — a real randomness source if you have one; never rig it to
   please the room.
-- Deliver the verdict with one line of market context from the book ("the
-  book tops out at $45, so $38 was the sharper bid anyway").
+- Deliver the verdict with one line of market context — the SnapFlip book
+  first, or `/api/market` comps when the book has nothing ("the book tops out
+  at $45" / "sold listings put it near $38, so $35 was the sharper bid").
 - Groups only, social stakes only. Never flip a price on a real SnapFlip
   order or auction — the clock decides those, not a coin.
 
