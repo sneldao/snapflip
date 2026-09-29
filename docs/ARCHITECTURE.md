@@ -60,6 +60,18 @@ At order creation, Claude turns the buyer's plain-English rules into structured 
 
 At auction time, for each candidate order, Claude receives the photo, the grade report and the rules. It returns `{eligible: bool, dropout_cents: int, reason: string}`. The dropout price is capped by the order's `max_cents` and the payment limit, and this is enforced in code, not trusted from the model. The reason is shown to the buyer afterwards ("Dropped at $38: label wear pushed it to grade B").
 
+## Catalog scale
+
+Both SKU touchpoints — `identify()` in `vision.ts` and `parseRules()` in `orders.ts` — paste the **entire** `skus` table into the prompt. That's correct while the retro-games catalog is dozens of rows; it breaks once vinyl / LEGO / TCG push it past ~1k items (context cost, then the context limit).
+
+When that happens, add a **hybrid retrieval step** (exact keyword + vector) that returns the top-k catalog candidates, and let the model pick only among those:
+
+- **Keyword side matters.** Title matching ("Pokémon Yellow" vs. regional and variant strings) needs exact-token recall; pure vector search is mediocre at it.
+- **One index, two call sites.** `identify` gets candidate titles injected into the vision prompt; `parseRules` gets candidates for `skuIds`. `skus.aliases_json` is already the alias surface — index it alongside titles.
+- **Engine:** Cloudflare Vectorize + Workers AI embeddings is the in-stack default (no new vendor, another binding in `wrangler.jsonc`). A managed hybrid service (e.g. Moss) only earns its keep if we ever need sub-10ms mid-conversation retrieval — a voice-agent concern nothing in the product currently has.
+
+Match-time lookup (`findCandidates`, the `order_skus` join) is unaffected — it already runs on exact `sku_id`.
+
 ## Components
 
 | Component | Responsibility |
