@@ -132,10 +132,15 @@ const tapeScript = html`<script>
     var stampEl = document.getElementById("stamp");
     var clockEl = document.getElementById("clock-fill");
     var stageEl = document.querySelector("#demo .stage"); // flea market → checkout footage at SOLD
+    var beatsBox = document.getElementById("beats");
+    var beatEls = beatsBox ? Array.prototype.slice.call(beatsBox.children) : [];
+    function setBeat(b) { beatEls.forEach(function (li, j) { li.classList.toggle("on", j === b); li.classList.toggle("done", j < b); }); }
     function stageReset() {
       if (priceEl) priceEl.textContent = "$6";
       if (stampEl) stampEl.classList.remove("on");
       if (stageEl) stageEl.classList.remove("sold");
+      if (beatsBox) beatsBox.classList.add("live");
+      setBeat(0);
       if (clockEl) clockEl.style.width = "0%";
       for (var k = 1; k <= 5; k++) {
         var b = document.getElementById("sb" + k);
@@ -148,6 +153,7 @@ const tapeScript = html`<script>
         if (!reduce) { priceEl.classList.remove("tick"); void priceEl.offsetWidth; priceEl.classList.add("tick"); }
       }
       if (clockEl) clockEl.style.width = Math.round((100 * (idx + 1)) / TAPE.length) + "%";
+      setBeat(e.sold || idx > 8 ? 2 : idx >= 2 ? 1 : 0); // SNAP+CLAUDE · DEMAND..$38 · SOLD+LIVE
       if (e.out) {
         e.out.forEach(function (n) {
           var b = document.getElementById("sb" + n);
@@ -199,7 +205,7 @@ const tapeScript = html`<script>
     if ("IntersectionObserver" in window) {
       new IntersectionObserver(function (entries) {
         paused = !entries[0].isIntersecting;
-      }).observe(reel);
+      }).observe(document.getElementById("demo") || reel); // the log is collapsed; watch the card
     }
     function enableTurbo() {
       document.body.classList.add("turbo");
@@ -685,8 +691,6 @@ landing.get("/", async (c) => {
         .proof span { font-size: 0.78rem; color: var(--muted); }
         .cta-row { display: flex; gap: 12px; flex-wrap: wrap; margin: 18px 0 6px; }
         .button { position: relative; }
-        .button.primary { background: var(--phos); color: #06130b; border-color: var(--phos); font-weight: 800; }
-        .button.primary:hover { background: #7dffab; box-shadow: 0 0 22px rgba(70,255,143,0.45); }
         .button.ghost { background: transparent; color: var(--amber); border-color: #6a5200; }
         .button.ghost:hover { background: rgba(255,176,0,0.1); border-color: var(--amber);
           box-shadow: 0 0 16px rgba(255,176,0,0.25); }
@@ -706,8 +710,6 @@ landing.get("/", async (c) => {
           linear-gradient(0deg, rgba(7,10,8,0.85) 0%, rgba(7,10,8,0) 55%); }
         .hero h1, .hero .lede, .hero .cta-note { text-shadow: 0 2px 14px rgba(0,0,0,0.85); max-width: 32em; }
         .hero .park-row { max-width: 620px; width: 100%; }
-        button.primary { background: var(--phos); color: #06130b; border-color: var(--phos); font-weight: 800; text-shadow: none; }
-        button.primary:hover { background: #7dffab; box-shadow: 0 0 22px rgba(70,255,143,0.45); }
         .card.has-bd, .stage.has-bd { background: #050806; }
         #trust > .bd::after, #doors > .bd::after { background: linear-gradient(90deg, rgba(7,10,8,0.86) 0%, rgba(7,10,8,0.55) 60%, rgba(7,10,8,0.25) 100%); }
         .stage > .bd::after { background: radial-gradient(ellipse at 50% 50%, rgba(7,10,8,0.62) 0%, rgba(7,10,8,0.25) 70%); }
@@ -715,8 +717,27 @@ landing.get("/", async (c) => {
         .stage .sold-bd { opacity: 0; transition: opacity 0.5s ease; }
         .stage.sold .sold-bd { opacity: 1; }
         .stage.sold .sold-bd video { filter: saturate(1.3) brightness(1.12); }
-        .money-line { margin: 12px 0 4px; font-size: 0.92rem; }
-        .money-line b { font-family: var(--font-num); font-size: 1.25rem; font-weight: 400; color: var(--phos); }
+        /* Demo in three beats (snap · bid · sold); the raw agent log is one click away. */
+        .beats-col { display: flex; flex-direction: column; justify-content: center; align-self: stretch; }
+        .beats { list-style: none; margin: 0; padding: 0; counter-reset: beat; display: grid; gap: 14px; }
+        .beats li { counter-increment: beat; border-left: 2px solid var(--line); padding: 4px 0 4px 14px; transition: opacity 0.3s, border-color 0.3s; }
+        .beats.live li { opacity: 0.4; }
+        .beats.live li.done { opacity: 0.75; }
+        .beats.live li.on { opacity: 1; border-color: var(--phos); }
+        .beats li b { display: block; font-family: var(--font-display); font-size: 0.82rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink); margin-bottom: 2px; }
+        .beats li b::before { content: "0" counter(beat) "  "; color: var(--muted); }
+        .beats li.on b { color: var(--phos); }
+        .beats li span { color: var(--muted); font-size: 0.92rem; }
+        .beats li em { font-style: normal; font-family: var(--font-num); font-size: 1.15rem; color: var(--phos); }
+        .demo-more { display: flex; gap: 8px 26px; flex-wrap: wrap; margin-top: 14px; }
+        .demo-more details { flex: 1 1 260px; }
+        .demo-more .reel { min-height: 0; margin-top: 8px; font-size: 0.95rem; }
+        /* Lighter tiers: evidence + reassurance without card chrome. */
+        .band { margin: 38px 0; }
+        .sec-label { display: flex; align-items: center; gap: 10px; margin: 0 0 12px; font-family: var(--font-display); font-size: 0.72rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--muted); }
+        .band-bd { margin: 38px -20px; padding: 34px 20px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+        #trust .rails .r { border: 0; border-left: 2px solid var(--phos-dim); border-radius: 0; background: transparent; padding: 2px 0 2px 12px; text-shadow: 0 2px 10px rgba(0,0,0,0.9); }
+        #trust .rails .r span { color: var(--ink); opacity: 0.85; }
         details.more summary { cursor: pointer; font-size: 0.78rem; color: var(--muted); letter-spacing: 0.14em; text-transform: uppercase; font-family: var(--font-display); }
         details.more p { font-size: 0.84rem; margin: 8px 0 0; }
         .doors-h { font-family: var(--font-display); font-weight: 800; font-size: 1.5rem; margin: 0; color: var(--ink); text-shadow: 0 2px 12px rgba(0,0,0,0.85); }
@@ -733,7 +754,7 @@ landing.get("/", async (c) => {
         .funnel .buy .k { color: var(--phos); }
         .funnel .sell .k { color: var(--amber); }
         .funnel p { margin: 0; font-size: 0.88rem; }
-        .demo-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 22px; align-items: start; }
+        .demo-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 22px; align-items: start; clear: both; }
         .stage { position: relative; border: 1px dashed var(--line); border-radius: 6px;
           padding: 18px 14px 14px; min-height: 17em; text-align: center; background: rgba(0,0,0,0.25); }
         .stage .tag { padding: 2px 14px 4px 30px; margin-bottom: 8px; }
@@ -827,7 +848,7 @@ landing.get("/", async (c) => {
         <span class="live-pill"><i class="live-dot" id="live-dot"></i> <span id="hero-demand">order book opens live — be #1</span></span>
         <span class="spacer"></span>
         <a class="button mini-cta" href="/sell" style="background:transparent">I resell</a>
-        <a class="button mini-cta" href="/buy">Set order</a>
+        <a class="button primary mini-cta" href="/buy">Set order</a>
       </div>
       <section class="hero has-bd">
         ${bd("storefront")}
@@ -875,19 +896,25 @@ landing.get("/", async (c) => {
             </div>
             <div class="stamp" id="stamp">SOLD $38</div>
           </div>
-          <div>
-            <div class="reel" id="reel" aria-live="polite"></div>
-            <button id="replay" type="button" hidden>▸ replay</button>
+          <div class="beats-col">
+            <ol class="beats" id="beats">
+              <li><b>Snap</b><span>A reseller photographs a <em>$6</em> cart. AI IDs it: Pokémon Yellow, grade B, not a repro.</span></li>
+              <li><b>Bid</b><span>5 buyer agents bid on a 60-second clock. Each drops out at its own cap — and says why.</span></li>
+              <li><b>Sold</b><span>Cleared at <em>$38</em>. The seller nets <em>$34.20</em> before paying for the cart. No sale? They walk away.</span></li>
+            </ol>
+            <button id="replay" type="button" hidden>↻ replay</button>
           </div>
         </div>
-        <p class="money-line"><b>$6</b> rack tag → <b>$38</b> cleared → seller nets <b>$34.20</b>. No sale? Walk away — nothing lost.</p>
+        <div class="demo-more">
+        <details class="more"><summary>Agent log</summary><div class="reel" id="reel"></div></details>
         <details class="more"><summary>Where the money goes</summary>
           <p class="muted">The buyer's card is authorized at the win and captured only when the seller buys the item and sends an in-hand photo. SnapFlip keeps 10%; the seller's payout releases on delivery via Stripe Connect. On a $38 sale eBay would net ~$32.87 (typical 13–15% all-in).</p>
           <p class="muted" id="revenue-line">Protocol revenue so far: $0 — every sale adds 10%.</p>
         </details>
+        </div>
       </div>
-      <div class="card" id="book">
-        <h2>Live order book <span class="badge live" style="float: right">REAL</span></h2>
+      <section class="band" id="book">
+        <p class="sec-label">Live order book <span class="badge live">real</span></p>
         <div class="row" id="ob-stats" hidden>
           <div><div class="tag"><div class="big" id="demand">$0</div></div><div class="muted">standing demand</div></div>
           <div><div class="big" id="collectors">0</div><div class="muted">collectors</div></div>
@@ -902,10 +929,10 @@ landing.get("/", async (c) => {
         </div>
         <div class="obsub" style="margin-top:12px">Agents can hunt today</div>
         <div class="chips" id="catalog-chips"></div>
-      </div>
-      <div class="card has-bd" id="trust">
+      </section>
+      <section class="band band-bd has-bd" id="trust">
         ${bd("cash-count")}
-        <h2>Autonomy with guardrails</h2>
+        <p class="sec-label">Autonomy with guardrails</p>
         <div class="rails">
           <div class="r"><strong>▣ Your max is law</strong>
             <span>Enforced in code, not the prompt. The model can only bid lower.</span></div>
@@ -916,15 +943,15 @@ landing.get("/", async (c) => {
           <div class="r"><strong>✦ Every exit explained</strong>
             <span>Agents say why they drop: grade cap, label wear, max reached.</span></div>
         </div>
-      </div>
-      <div class="card faq" id="faq">
-        <h2>Fair questions</h2>
+      </section>
+      <section class="band faq" id="faq">
+        <p class="sec-label">Fair questions</p>
         <details><summary>What if nobody bids?</summary><p>You walk away. No listing, no fee, no dead inventory. The snap cost you 10 seconds.</p></details>
         <details><summary>When is my card actually charged?</summary><p>Only after the seller buys the item and sends an in-hand photo. Before that it's an authorization hold at the clearing price — never your max.</p></details>
         <details><summary>What stops fakes?</summary><p>AI vision checks every snap for repro tells, and the auction engine hard-rejects anything flagged. Grade caps let buyers skip rough copies.</p></details>
         <details><summary>Do I need Telegram or Claude?</summary><p>Resellers use Telegram. Collectors can use the web, Claude (MCP connector) or the Brainbase concierge — same order book.</p></details>
         <details><summary>What does it cost?</summary><p>Collecting is free. Sellers pay 10% only when it sells. Optional Buyer Plus ($6/mo) wins tie-breaks.</p></details>
-      </div>
+      </section>
       <div class="card has-bd" id="doors">
         ${bd("shelves")}
         <div class="row" style="align-items: center">

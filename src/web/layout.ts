@@ -78,6 +78,16 @@ export const layout = (title: string, body: Body, opts: LayoutOpts = {}) => html
       }
       a.button:hover, button:hover { background: #2a9a58; box-shadow: 0 0 16px rgba(70, 255, 143, 0.35); }
       button.danger { background: #4a1620; border-color: #7a2a38; text-shadow: 0 0 8px rgba(255, 95, 95, 0.4); }
+      /* One primary + one secondary action style on every page. */
+      a.button.primary, button.primary { background: var(--phos); color: #06130b; border-color: var(--phos); font-weight: 800; text-shadow: none; }
+      a.button.primary:hover, button.primary:hover { background: #7dffab; box-shadow: 0 0 22px rgba(70, 255, 143, 0.45); }
+      a.button.ghost, button.ghost { background: transparent; color: var(--amber); border-color: #6a5200; text-shadow: none; }
+      a.button.ghost:hover, button.ghost:hover { background: rgba(255, 176, 0, 0.1); border-color: var(--amber); box-shadow: 0 0 16px rgba(255, 176, 0, 0.25); }
+      /* Disclosure: one chevron + a text label everywhere. */
+      details > summary { cursor: pointer; list-style: none; }
+      details > summary::-webkit-details-marker { display: none; }
+      details > summary::before { content: "›"; display: inline-block; width: 1.1em; color: var(--phos); transition: transform 0.15s ease; }
+      details[open] > summary::before { transform: rotate(90deg); }
       button.danger:hover { background: #6a1f2c; box-shadow: 0 0 16px rgba(255, 95, 95, 0.3); }
       label { display: block; margin: 14px 0 4px; font-size: 0.78rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); font-family: var(--font-display); font-weight: 600; }
       input, select {

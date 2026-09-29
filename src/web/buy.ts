@@ -58,7 +58,7 @@ const buyForm = (catalog: string[], error?: string, v: FormValues = {}) => html`
       </div>
     </details>
     <p class="muted">You pay the clearing price — never your max, usually less.</p>
-    <p><button type="submit">Save card and set order</button></p>
+    <p><button type="submit" class="primary">Save card and set order</button></p>
   </form>
   ${soonRail}
   <script>
