@@ -127,7 +127,16 @@ Swap a stub for the real implementation without changing its signature. If you m
 | Primary action | Order form (item + max → Start hunting) | Open the Telegram bot (amber button) |
 | Beats | Set · Bid · Win | Snap · Watch · Decide |
 
-Rules: one control, two states, no page change (Primer: maintain context). Remember the choice (URL `?as=resell` for shareable links and the `/sell` redirect, plus `localStorage`). Collector stays the default so the booth QR flow is unchanged. Everything below the hero stays shared. Colour follows the existing system: green = collectors, amber = resellers. Done when: both states pass the desktop + mobile screenshot check and `/sell` either redirects to `/?as=resell` or stays as the long-form reseller page (decide then).
+Rules: one control, two states, no page change (Primer: maintain context). Remember the choice (URL `?as=resell` for shareable links, plus `localStorage`). Collector stays the default so the booth QR flow is unchanged. Everything below the hero stays shared. Colour follows the existing system: green = collectors, amber = resellers.
+
+**Decision: `/sell` stays a long-form page, no redirect.** The hero switch orients ("is this for me, what do I tap?"); `/sell` answers what a reseller needs before committing (what they net, payout timing, express payout, the one-time Stripe setup). Redirecting would either drop that depth or cram it into the hero, and it would break `/sell` as a shareable destination with its own share card. To keep the two cohesive:
+1. One shared set of reseller copy (headline, explanation, beats) used by both the hero's "I resell" state and the top of `/sell`, so they can't drift.
+2. The hero's reseller state shows only the essentials (headline, one line, the Telegram button) plus a "How it pays →" link to `/sell`.
+3. `/sell` opens with the same hero in the "I resell" state, detail below; flipping the switch to "I collect" there goes to `/`.
+4. `?as=resell` is a shortcut to the landing page in reseller state (booth / social links); `/sell` stays the canonical reseller URL.
+5. Guardrail: `/sell/onboard` (Stripe payout setup) shares the prefix. Any future redirect must match `/sell` exactly, never the onboarding path.
+
+Done when both hero states and `/sell` pass the desktop + mobile screenshot check.
 
 ## Cut order if behind
 
