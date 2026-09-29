@@ -107,6 +107,28 @@ Swap a stub for the real implementation without changing its signature. If you m
 | 2:45 PM | Final take recorded | ⬜ |
 | 3:15 PM | Devpost submitted (edit until 3:30) | ⬜ |
 
+## Landing page — design principles and next step
+
+**Principles we design against** (from the UI/UX review): *chunking* (group information the way users think, not the way we built it), *visual hierarchy* (not everything gets the same weight), and *progressive disclosure* per [Primer](https://github.com/primer/design/blob/main/content/ui-patterns/progressive-disclosure.mdx) (use it sparingly, never hide what the user came for, always pair the toggle icon with text) and [North](https://github.com/north/north) (complexity is fine, complication isn't; high signal-to-noise; consistent, predictable components; don't hide content by device).
+
+**Shipped** (`src/web/landing.ts`, `src/web/layout.ts`):
+- Six sections instead of ~14: hero (order form inline) → demo → live order book → guardrails → FAQ → closing "two doors" CTA. The scroll tour is a footer link.
+- Chunking: the demo explains itself in three synced beats (**snap · bid · sold**); the raw agent log and the money breakdown sit behind labelled toggles.
+- Hierarchy: the hero and demo are the only framed cards; the order book, guardrails (full-width footage band) and FAQ drop card chrome, so evidence reads lighter than the story.
+- Consistency: one primary (filled green) and one secondary (amber outline) button style, and one chevron + label disclosure style, shared by every page from `layout.ts`.
+- Archival footage backdrops (public-domain Moving Image Archive clips in `public/media`, served by the Worker with byte ranges so iOS Safari plays them): lazy-loaded, paused off-screen, stills only for reduced motion / data saver.
+
+**Next — audience switch in the hero (after Brainbase judging).** The page still speaks to collectors first, with resellers a link away. Add an **I collect | I resell** segmented switch at the top of the hero that swaps the headline, one-line explanation, primary action and three beats to match the visitor:
+
+| | I collect (default) | I resell |
+|---|---|---|
+| Headline | Tell an agent what you're hunting. It wins it for you. | Know it's sold before you pay. |
+| Explanation | Set your max once; your agent bids on every matching snap and never goes a dollar over. | Snap a cart on the rack; buyer agents bid for 60 seconds; buy it only if it cleared your floor. |
+| Primary action | Order form (item + max → Start hunting) | Open the Telegram bot (amber button) |
+| Beats | Set · Bid · Win | Snap · Watch · Decide |
+
+Rules: one control, two states, no page change (Primer: maintain context). Remember the choice (URL `?as=resell` for shareable links and the `/sell` redirect, plus `localStorage`). Collector stays the default so the booth QR flow is unchanged. Everything below the hero stays shared. Colour follows the existing system: green = collectors, amber = resellers. Done when: both states pass the desktop + mobile screenshot check and `/sell` either redirects to `/?as=resell` or stays as the long-form reseller page (decide then).
+
 ## Cut order if behind
 
 1. Soft close / human raise-max

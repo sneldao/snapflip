@@ -74,7 +74,7 @@ At auction time, for each candidate order, Claude receives the photo, the grade 
 | `src/telegram.ts` | Seller and buyer bot messages, inline buttons, live auction message edits |
 | `src/mcp.ts` | Remote MCP server (`McpAgent`): buyer tools, authenticated per buyer by token |
 | `src/lib/tokens.ts` | Per-buyer bearer tokens (`sf_…`): shown once, stored as SHA-256 (`buyers.token_hash`) |
-| `web/` | Landing page (simulated-tape hero, live order book depth, real-auction tape), `/a/{id}` live auction page (polaroid snap, pixel-bot agent chips, boss-bar clock, GOING ONCE during soft-close — `AuctionView.closing`), `/buy` onboarding (optional per-grade caps are folded into the rules text the parser reads) and order management. Shared retro-terminal design system in `web/layout.ts` |
+| `web/` | Landing page (footage-backed hero with the order form inline, snap · bid · sold demo synced to a simulated auction, live order book, guardrails, FAQ; see BUILD.md "Landing page" for the design principles and next step), footage served from `public/media` with byte ranges (`/media/*`), `/a/{id}` live auction page (polaroid snap, pixel-bot agent chips, boss-bar clock, GOING ONCE during soft-close — `AuctionView.closing`), `/buy` onboarding (optional per-grade caps are folded into the rules text the parser reads) and order management. Shared retro-terminal design system in `web/layout.ts` |
 | `concierge/` | Brainbase agent manifest + instructions for the hosted buyer concierge (`snapflip-concierge`) |
 
 ## Endpoints
