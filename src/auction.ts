@@ -377,8 +377,9 @@ export const auctions = new Hono<App>();
 
 auctions.get("/a/:id/ws", (c) => auctionStub(c.env, c.req.param("id")).fetch(c.req.raw));
 
-/** Seller's in-hand proof photo, sent before the buyer's card is captured. */
-auctions.get("/a/:id/proof", async (c) => {
+/** Seller's in-hand proof photo, sent before the buyer's card is captured.
+ *  Raw bytes live under /img — /a/:id/proof itself is the buyer-facing card. */
+auctions.get("/a/:id/proof/img", async (c) => {
   const row = await c.env.DB.prepare("SELECT proof_r2_key FROM auctions WHERE id = ?")
     .bind(c.req.param("id"))
     .first<{ proof_r2_key: string | null }>();

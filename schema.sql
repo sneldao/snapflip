@@ -82,6 +82,8 @@ CREATE TABLE IF NOT EXISTS auctions (
   transfer_id TEXT,
   proof_requested_at TEXT,                 -- seller tapped "I bought it"; waiting on the proof photo
   proof_r2_key TEXT,                       -- seller's in-hand photo; capture happens only after it lands
+  proof_verdict TEXT,                      -- match | unclear | mismatch — vision check before capture
+  proof_verdict_notes TEXT,
   tg_chat_id TEXT,                         -- seller's live-auction message, edited as the price climbs
   tg_message_id INTEGER
 );
@@ -89,6 +91,8 @@ CREATE INDEX IF NOT EXISTS idx_auctions_pi ON auctions(payment_intent_id);
 -- Migration for DBs created before the proof/live columns:
 -- ALTER TABLE auctions ADD COLUMN proof_requested_at TEXT;
 -- ALTER TABLE auctions ADD COLUMN proof_r2_key TEXT;
+-- ALTER TABLE auctions ADD COLUMN proof_verdict TEXT;
+-- ALTER TABLE auctions ADD COLUMN proof_verdict_notes TEXT;
 -- ALTER TABLE auctions ADD COLUMN tg_chat_id TEXT;
 -- ALTER TABLE auctions ADD COLUMN tg_message_id INTEGER;
 

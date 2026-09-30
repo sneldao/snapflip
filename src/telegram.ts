@@ -5,7 +5,7 @@ import { buyerAgent } from "./buyer";
 import { findCandidates } from "./match";
 import { capture, expressEligible, release, releaseExpress } from "./payments";
 import { expressFeeBps, sellerFeeBps, splitExpress, splitFee } from "./lib/fees";
-import { grade, identify, type Category } from "./vision";
+import { grade, identify, verifyMatch, type Category } from "./vision";
 import { newId, safeEqual, usd, type App } from "./lib/util";
 import { nearbyDemand, offerWatch, ordinal, snapsToday } from "./watches";
 import type { Env, Identification, NotifyEvent, NotifyTarget, Snap } from "./types";
@@ -370,22 +370,39 @@ async function pendingProof(env: Env, chatId: number): Promise<string | null> {
   return r?.id ?? null;
 }
 
-/** Proof photo landed: store it, capture the buyer's card, then the usual post-capture choices. */
+/** Proof photo landed: verify it's the auctioned item, then capture the buyer's card.
+ *  A clear mismatch blocks the charge — the seller retakes with the actual item. */
 async function handleProof(env: Env, chatId: number, auctionId: string, fileId: string, mediaType: ImageType): Promise<void> {
-  const statusId = await send(env, chatId, "&gt; got the photo — charging the buyer…");
+  const statusId = await send(env, chatId, "&gt; got the photo — checking it against the snap…");
   const key = `proofs/${auctionId}.${mediaType.split("/")[1].replace("jpeg", "jpg")}`;
+  const snap = await env.DB.prepare(
+    `SELECT COALESCE(sk.title, 'the item') AS title
+       FROM auctions a JOIN snaps sn ON sn.id = a.snap_id LEFT JOIN skus sk ON sk.id = sn.sku_id
+      WHERE a.id = ?`,
+  ).bind(auctionId).first<{ title: string }>();
+  const photo = await downloadTgFile(env, fileId);
+  await env.PHOTOS.put(key, photo, { httpMetadata: { contentType: mediaType } });
+  const v = await verifyMatch(env, photo, snap?.title ?? "the item", mediaType).catch(() => null);
+  if (v?.verdict === "mismatch") {
+    // Don't charge for the wrong item. Key stays unset so the seller can simply reshoot.
+    console.log(`[proof] mismatch on ${auctionId}: ${v.notes}`);
+    await env.DB.prepare("UPDATE auctions SET proof_verdict = 'mismatch', proof_verdict_notes = ? WHERE id = ?").bind(v.notes, auctionId).run();
+    await edit(env, chatId, statusId,
+      `<code>HOLD ON</code> That doesn't look like <b>${esc(snap?.title ?? "the item")}</b> — ${esc(v.notes)}\n▸ Send a photo of the actual item to charge the buyer.`);
+    return;
+  }
   try {
-    await env.PHOTOS.put(key, await downloadTgFile(env, fileId), { httpMetadata: { contentType: mediaType } });
     // Key first so the buyer's CAPTURED ping can already link to the photo; a failed capture leaves
     // status 'settled', so the seller can simply send the photo again.
-    await env.DB.prepare("UPDATE auctions SET proof_r2_key = ? WHERE id = ?").bind(key, auctionId).run();
+    await env.DB.prepare("UPDATE auctions SET proof_r2_key = ?, proof_verdict = ?, proof_verdict_notes = ? WHERE id = ?")
+      .bind(key, v?.verdict ?? "unclear", v?.notes ?? null, auctionId).run();
     await capture(env, auctionId);
   } catch (e) {
     await env.DB.prepare("UPDATE auctions SET proof_r2_key = NULL WHERE id = ? AND status = 'settled'").bind(auctionId).run();
     await edit(env, chatId, statusId, `Couldn't charge the buyer: ${esc((e as Error).message)}\n▸ Send the photo again.`);
     return;
   }
-  await edit(env, chatId, statusId, "<code>PROOF</code> Photo received — the buyer can see it.");
+  await edit(env, chatId, statusId, `<code>PROOF</code> ${v?.verdict === "match" ? "Verified — it's the item that sold." : "Photo received"} — the buyer can see it.`);
   await afterCapture(env, chatId, auctionId);
 }
 

@@ -98,6 +98,12 @@ export interface GradeReport {
   itemBox?: [number, number, number, number];
 }
 
+export interface ProofVerdict {
+  verdict: "match" | "unclear" | "mismatch";
+  notes: string;
+  confidence: number;
+}
+
 export interface Snap {
   id: string;
   sellerId: string;

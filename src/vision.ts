@@ -1,7 +1,7 @@
 // Owner: A. Claude vision: identify the exact SKU and grade condition from a photo.
 import { claudeJson, llmAvailable } from "./lib/claude";
 import { CONDITION_FLAGS } from "./lib/flags";
-import type { Env, GradeReport, Identification, Sku } from "./types";
+import type { Env, GradeReport, Identification, ProofVerdict, Sku } from "./types";
 
 type MediaType = "image/jpeg" | "image/png" | "image/webp";
 
@@ -76,6 +76,23 @@ Shape: {"grade": "A"|"B"|"C"|"D", "notes": string (one sentence), "flags": strin
     .slice(0, 4)
     .map((f) => ({ area: f.area.slice(0, 40), observation: f.observation.slice(0, 80), box: cleanBox(f.box) }));
   out.itemBox = cleanBox(out.itemBox);
+  return out;
+}
+
+/** Re-identify the seller's in-hand proof photo against the auctioned item —
+ *  the anti-swap check that gates the buyer's charge. */
+export async function verifyMatch(env: Env, photo: ArrayBuffer, expectedTitle: string, mediaType: MediaType = "image/jpeg"): Promise<ProofVerdict> {
+  if (!llmAvailable(env)) return { verdict: "unclear", notes: "verification unavailable", confidence: 0 };
+  const out = await claudeJson<ProofVerdict>(env, {
+    system: `You verify that a seller's "in hand" proof photo shows the same item that was auctioned: "${expectedTitle}".
+Compare the visible item — label art and title text, shape, color, distinguishing wear — with what that item should look like.
+verdict: "match" = the same item/title; "mismatch" = clearly a different item or title; "unclear" = can't tell (bad photo, item occluded).
+Be strict: a different title is a mismatch. Lighting, angle, or a different background alone are not.
+Shape: {"verdict": "match"|"unclear"|"mismatch", "notes": string (one sentence — what you compared), "confidence": number 0-1}`,
+    content: [image(photo, mediaType), { type: "text", text: "Does this photo show the auctioned item?" }],
+  });
+  if (out.verdict !== "match" && out.verdict !== "mismatch") out.verdict = "unclear";
+  out.confidence = Math.min(1, Math.max(0, out.confidence ?? 0));
   return out;
 }
 

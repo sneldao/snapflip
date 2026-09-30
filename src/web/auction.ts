@@ -315,3 +315,53 @@ auctionPage.get("/a/:id", async (c) => {
     ),
   );
 });
+
+/** Buyer-facing proof page: the seller's in-hand photo beside the original snap,
+ *  stamped with the vision verdict — the buyer sees the agent checked. */
+auctionPage.get("/a/:id/proof", async (c) => {
+  const row = await c.env.DB.prepare(
+    `SELECT COALESCE(sk.title, 'the item') AS title, a.clearing_cents, a.proof_r2_key,
+            a.proof_verdict, a.proof_verdict_notes
+       FROM auctions a JOIN snaps sn ON sn.id = a.snap_id LEFT JOIN skus sk ON sk.id = sn.sku_id
+      WHERE a.id = ?`,
+  )
+    .bind(c.req.param("id"))
+    .first<{ title: string; clearing_cents: number | null; proof_r2_key: string | null; proof_verdict: string | null; proof_verdict_notes: string | null }>();
+  if (!row) return c.notFound();
+  const id = c.req.param("id");
+  const stamp = row.proof_verdict === "match"
+    ? html`<div class="vstamp v-ok">✓ VERIFIED MATCH</div>`
+    : row.proof_verdict === "mismatch"
+      ? html`<div class="vstamp v-no">⚠ MISMATCH FLAGGED</div>`
+      : html`<div class="vstamp v-un">UNVERIFIED</div>`;
+  return c.html(
+    layout(
+      `${row.title} — proof of hand`,
+      html`<style>
+        .pair { display: flex; gap: 14px; align-items: stretch; }
+        .pair figure { flex: 1; margin: 0; }
+        .pair figcaption { font-family: var(--font-num); font-size: 11px; letter-spacing: 0.1em;
+          color: var(--phos-dim); margin-top: 6px; }
+        .vstamp { font-family: var(--font-num); font-size: 15px; letter-spacing: 0.08em;
+          padding: 10px 14px; border: 2px solid; border-radius: 6px; transform: rotate(-1.5deg);
+          display: inline-block; margin: 10px 0; }
+        .v-ok { color: var(--phos); border-color: var(--phos); text-shadow: 0 0 14px rgba(255,179,56,0.5); }
+        .v-un { color: var(--phos-dim); border-color: var(--phos-dim); }
+        .v-no { color: var(--red); border-color: var(--red); }
+      </style>
+      <p><span class="badge off">SOLD${row.clearing_cents ? " · $" + (row.clearing_cents / 100).toFixed(0) : ""}</span></p>
+      <h1>${row.title}</h1>
+      <div class="card">
+        <h2>Proof of hand</h2>
+        ${stamp}
+        <div class="pair">
+          <figure><img class="photo" src=${`/a/${id}/photo`} alt="The original auction snap" /><figcaption>the snap</figcaption></figure>
+          <figure><img class="photo" src=${`/a/${id}/proof/img`} alt="The seller's in-hand proof photo" /><figcaption>in hand</figcaption></figure>
+        </div>
+        ${row.proof_verdict_notes ? html`<p class="muted">${row.proof_verdict_notes}</p>` : null}
+        <p class="muted">Charged only after this photo landed — your card was authorized at the clearing price, never your max.</p>
+      </div>`,
+      { crt: true, image: `${c.env.PUBLIC_URL}/og.png` },
+    ),
+  );
+});
