@@ -77,7 +77,7 @@ Return {"eligible": boolean, "dropoutCents": integer (<= ${det.dropoutCents}), "
 // Max simultaneous verifyOne calls — bounds outbound model-call bursts per snap.
 const VERIFY_CONCURRENCY = 5;
 
-export async function findCandidates(env: Env, snap: Snap): Promise<Valuation[]> {
+export async function findCandidates(env: Env, snap: Snap, opts: { includeUnpayable?: boolean } = {}): Promise<Valuation[]> {
   if (!snap.skuId) return [];
   const { results } = await env.DB.prepare(
     `SELECT o.id, o.buyer_id, o.rules_json, o.rules_text, o.max_cents, b.limit_cents
@@ -86,6 +86,7 @@ export async function findCandidates(env: Env, snap: Snap): Promise<Valuation[]>
        JOIN buyers b ON b.id = o.buyer_id
       WHERE os.sku_id = ? AND o.status = 'open'
         AND (o.expires_at IS NULL OR o.expires_at > strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+        ${opts.includeUnpayable ? "" : "AND b.payment_method_id IS NOT NULL"}
       ORDER BY o.created_at`,
   )
     .bind(snap.skuId)

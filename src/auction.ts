@@ -352,11 +352,11 @@ export function auctionStub(env: Env, auctionId: string) {
 }
 
 /** HANDOFF A → B. Seller set a reserve on a snap; start the auction. */
-export async function startAuction(env: Env, snap: Snap, reserveCents: number): Promise<{ auctionId: string; view: AuctionView }> {
+export async function startAuction(env: Env, snap: Snap, reserveCents: number, opts: { includeUnpayable?: boolean } = {}): Promise<{ auctionId: string; view: AuctionView }> {
   const sku = snap.skuId
     ? await env.DB.prepare("SELECT ref_price_cents FROM skus WHERE id = ?").bind(snap.skuId).first<{ ref_price_cents: number }>()
     : null;
-  const candidates = await findCandidates(env, snap);
+  const candidates = await findCandidates(env, snap, opts);
   const auctionId = newId("a");
   await env.DB.prepare("INSERT INTO auctions (id, snap_id, status, reserve_cents) VALUES (?, ?, 'live', ?)")
     .bind(auctionId, snap.id, reserveCents)
@@ -435,6 +435,6 @@ auctions.post("/dev/fake-auction", devOnly, requireApiKey, async (c) => {
   await c.env.DB.prepare(
     "INSERT INTO snaps (id, seller_id, r2_key, sku_id, confidence, grade, grade_notes, rack_cents, reserve_cents) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
   ).bind(snap.id, snap.sellerId, snap.r2Key, snap.skuId, snap.confidence, snap.grade, snap.gradeNotes, snap.rackCents, snap.reserveCents).run();
-  const { auctionId, view } = await startAuction(c.env, snap, snap.reserveCents!);
+  const { auctionId, view } = await startAuction(c.env, snap, snap.reserveCents!, { includeUnpayable: true });
   return c.json({ auctionId, url: `${c.env.PUBLIC_URL}/a/${auctionId}`, view });
 });
