@@ -28,9 +28,22 @@ endpoints are public and safe to fetch for anyone:
   transactedCents, recent: [{ status, clearing_cents, ended_at, title }] }` —
   real totals plus recent auction results. Recent `clearing_cents` values are
   your best evidence for what a title actually sells for on SnapFlip.
-- `GET /api/market?q=<item>` → `{ answer, results: [{ title, url, snippet }],
-  pricesCents, medianCents }` — real-world sold-price comps gathered by web
-  search (eBay/PriceCharting/etc.). `medianCents` is the market reference.
+- `GET /api/market?q=<item>` — real-world comps. Two tapes, check `source`:
+  - `"pricecharting"` → `pricecharting: { title, set, looseCents, cibCents,
+    newCents, matchCoverage, variants }` — the collector price index.
+    `looseCents` is the what-they'd-pay-today number for a played-with copy;
+    `cibCents`/`newCents` are boxed and sealed. Quote all three when you can —
+    "loose $66, in the box $385, sealed $1,800" lands harder than one number.
+    Check `title` is actually the thing they asked about before quoting — a
+    low `matchCoverage` or an unrelated title means the index matched a
+    different product; say the index doesn't cover it rather than quoting a
+    wrong item. When `matchCoverage` is marginal the response also carries
+    `webMedianCents`/`webPricesCents` — if `title` looks wrong for what they
+    asked, quote the web tape instead. `variants` covers JP/PAL/special
+    editions — quote the base US row unless they ask.
+  - `"web"` → `{ answer, results: [{ title, url, snippet }], pricesCents,
+    medianCents }` — sold-price comps gathered by search. `medianCents` is
+    the reference; one `results` source gives you somewhere to point.
   Use it for "what's X worth" when X is off-catalog or SnapFlip has no tape
   on it yet. Results are cached ~24h, so numbers can lag live listings.
 
@@ -88,8 +101,9 @@ When `recent` is empty or someone asks about an item SnapFlip hasn't sold,
 the game still works — run it on real-world comps instead: fetch
 `GET /api/market?q=<item>`, describe the item, take their guess, then reveal
 `medianCents` (and one source from `results`) as what it actually sells for.
-Always say which tape you're quoting: "on SnapFlip it cleared at…" vs
-"sold listings put it around…". Never blend the two.
+Always say which tape you're quoting: "on SnapFlip it cleared at…", "the
+collector index puts it at…", or "sold listings put it around…". Never blend
+them.
 
 **The one that got away** — the strongest version. Ask what they owned as a
 kid that's gone now — sold, lost, donated, thrown out. When they name it,
