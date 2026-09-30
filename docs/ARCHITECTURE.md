@@ -77,7 +77,7 @@ Match-time lookup (`findCandidates`, the `order_skus` join) is unaffected — it
 | Component | Responsibility |
 |---|---|
 | `src/index.ts` | Router: HTTP endpoints, Telegram webhook, Stripe webhook, MCP mount |
-| `src/vision.ts` | Model calls: `identify(photo) → {sku_id, title, confidence}`, `grade(photo) → {grade, notes, flags}` (Anthropic, falling back to Featherless) |
+| `src/vision.ts` | Model calls: `identify(photo) → {sku_id, title, confidence, alternatives}`, `grade(photo) → {grade, notes, flags, findings, itemBox}` (findings/itemBox carry normalized photo regions for the annotated snap), `verifyMatch(photo, title) → {verdict, notes, confidence}` (proof-of-hand check that gates capture) — Anthropic, falling back to Featherless |
 | `src/match.ts` | Candidate lookup (D1) and Claude verification and valuation for each order (fan-out capped at 5 concurrent calls) |
 | `src/lib/claude.ts` | Model gateway: Anthropic → Featherless fallback, `llm_cache` response dedupe (D1), 20s attempt timeout, Anthropic prompt caching |
 | `src/auction.ts` | `AuctionDO`: state machine, alarm clock, WebSocket fan-out, writes result to D1 |
@@ -88,7 +88,7 @@ Match-time lookup (`findCandidates`, the `order_skus` join) is unaffected — it
 | `src/market.ts` | Real-world comps for the desk: `/api/market` (PriceCharting index via Tavily Extract, web-search fallback) and `/api/collection` (multi-item appraisal), both cache-first in `market_cache` and quota-guarded by `market_calls` |
 | `src/pricewatch.ts` | Cron pass over armed `market_watches`: re-reads the market tape and pings the collector's Telegram once their max is hit |
 | `src/lib/tokens.ts` | Per-buyer bearer tokens (`sf_…`): shown once, stored as SHA-256 (`buyers.token_hash`) |
-| `web/` | Landing page (footage-backed hero with the order form inline, snap · bid · sold demo synced to a simulated auction, live order book, guardrails, FAQ; see BUILD.md "Landing page" for the design principles and next step), footage served from `public/media` with byte ranges (`/media/*`), `/a/{id}` live auction page (polaroid snap, pixel-bot agent chips, boss-bar clock, GOING ONCE during soft-close — `AuctionView.closing`), `/buy` onboarding (optional per-grade caps are folded into the rules text the parser reads) and order management, `/watch` price-watch arming + `/box` collection appraisal receipt. Shared retro-terminal design system in `web/layout.ts` |
+| `web/` | Landing page (footage-backed hero with the order form inline, snap · bid · sold demo synced to a simulated auction, live order book, guardrails, FAQ; see BUILD.md "Landing page" for the design principles and next step), footage served from `public/media` with byte ranges (`/media/*`), `/a/{id}` live auction page (polaroid snap with annotated vision regions + scan sweep, appraisal slab: cert id/grade/findings/flags, pixel-bot agent chips, boss-bar clock, GOING ONCE during soft-close — `AuctionView.closing`), `/a/{id}/proof` buyer-facing verification card (snap vs in-hand photo, verdict stamp), `/buy` onboarding (optional per-grade caps are folded into the rules text the parser reads) and order management, `/watch` price-watch arming + `/box` collection appraisal receipt. Shared retro-terminal design system in `web/layout.ts` |
 | `concierge/` | Brainbase agent manifest + instructions for the hosted buyer concierge (`snapflip-concierge`) |
 | `scout/` | Scout, the collector-desk agent — OpenClaw 2.0 on the Plow base image (own Dockerfile, persona, `snapflip` skill). Desk mode: hosted phone line, no credentials, public endpoints only. Personal mode: 1-click installs carry the owner's own `sf_` token to `/mcp`. MIT-licensed with the repo. |
 
@@ -107,9 +107,11 @@ Match-time lookup (`findCandidates`, the `order_skus` join) is unaffected — it
 | GET | `/watch?item&max` | Arms a `market_watches` row; page shows the current tape and hands off to a `t.me/<bot>?start=w_<code>` deep link that binds the collector's Telegram |
 | GET | `/box?items=a\|b\|c` | The appraisal artifact: per-item market prices and a total on a till receipt, with per-row watch links |
 | GET | `/qr` | Booth display: giant QR to `/buy` + live stats |
-| GET | `/a/{id}` | Public live auction page |
+| GET | `/a/{id}` | Public live auction page (annotated snap + appraisal slab) |
 | GET | `/a/{id}/ws` | WebSocket to `AuctionDO` |
 | GET | `/a/{id}/photo` | The snapped item's photo, streamed from R2 (immutable cache) |
+| GET | `/a/{id}/proof` | Buyer-facing proof-of-hand card: snap vs in-hand photo, vision verdict stamp |
+| GET | `/a/{id}/proof/img` | The proof photo's raw bytes, streamed from R2 |
 | POST | `/api/auctions/{id}/confirm` | Seller bought the item (photo) → capture payment |
 | POST | `/api/auctions/{id}/shipped` | Tracking number → buyer notified |
 | POST | `/api/auctions/{id}/delivered` | Release funds → Transfer to seller |
@@ -126,7 +128,7 @@ Match-time lookup (`findCandidates`, the `order_skus` join) is unaffected — it
 
 1. **Payment limit (buyer onboarding).** For the demo: Checkout in `setup` mode saves a PaymentMethod on a Customer; `limit_cents` and `limit_expires_at` are set at signup and enforced in code. A Shared Payment Token scoped to SnapFlip remains the preferred production path — the slot for it is marked `TODO(C)` in `settleAuction`, pending whether SPTs support `capture_method=manual`.
 2. **Auction cleared.** Create a PaymentIntent for the clearing price with `capture_method=manual`, `off_session=true`, `confirm=true` and `transfer_group=auction_{id}`. This authorizes without charging. If the authorization fails, the next-highest agent whose dropout covers it wins at the same clearing price — every bidder pays the price the clock stopped at, never their own (higher) maximum.
-3. **Seller confirms purchase** (photo of the item in hand) → `capture`. If the seller doesn't confirm within 2h, a 5-minute cron (`voidExpiredAuths`) cancels the PaymentIntent, reopens the winning order, and lowers the seller's reliability score.
+3. **Seller confirms purchase** (photo of the item in hand) → `verifyMatch` re-identifies it against the auctioned title; a clear mismatch blocks the charge and the seller reshoots, otherwise → `capture`. If the seller doesn't confirm within 2h, a 5-minute cron (`voidExpiredAuths`) cancels the PaymentIntent, reopens the winning order, and lowers the seller's reliability score.
 4. **Delivered** → `Transfer` of clearing price minus 10% fee minus label cost to the seller's Connect account, same `transfer_group`.
 5. **Dispute or not as described** → refund from the platform balance before any transfer. Holding funds until delivery is why we use separate charges and transfers rather than destination charges.
 
@@ -138,8 +140,8 @@ sellers  (id, tg_chat_id, stripe_account_id, payouts_enabled, reliability, creat
 skus     (id, category, title, platform, region, variant, aliases_json, ref_price_cents, image_url)
 orders   (id, buyer_id, rules_text, rules_json, max_cents, status, expires_at, created_at)
 order_skus (order_id, sku_id)                          -- index for matching
-snaps    (id, seller_id, r2_key, sku_id, confidence, grade, grade_notes, flags_json, rack_cents, reserve_cents, created_at)
-auctions (id, snap_id, status, started_at, ended_at, clearing_cents, winner_order_id, payment_intent_id, transfer_id)
+snaps    (id, seller_id, r2_key, sku_id, confidence, grade, grade_notes, flags_json, findings_json, item_box_json, rack_cents, reserve_cents, created_at)
+auctions (id, snap_id, status, started_at, ended_at, clearing_cents, winner_order_id, payment_intent_id, transfer_id, proof_r2_key, proof_verdict, proof_verdict_notes, proof_requested_at, tg_chat_id, tg_message_id)
 bids     (auction_id, order_id, event, price_cents, reason, at)   -- event: join | drop | raise | win
 platform_fees (auction_id, clearing_cents, fee_bps, fee_cents, express_fee_cents, created_at) -- fee snapshot per sale
 subscriptions (buyer_id, stripe_subscription_id, status, current_period_end, created_at)      -- Buyer Plus

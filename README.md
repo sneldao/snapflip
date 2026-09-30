@@ -13,7 +13,7 @@ Collectors have the opposite problem. They know exactly what they want and what 
 ## How it works
 
 1. **Buyers set standing orders with an agent.** "Pokémon Yellow, cartridge only, authentic, good label, up to $45." They can do this through Claude (MCP), a Brainbase-hosted concierge, the web, or by texting **Scout** — our collector-desk agent on OpenClaw (`scout/`): **+1 650 315 6536**. The buyer grants a spending limit that only works at SnapFlip, is capped, and expires.
-2. **A reseller snaps an item at the thrift store** (Telegram). Claude identifies the exact SKU and grades its condition from the photo.
+2. **A reseller snaps an item at the thrift store** (Telegram). Claude identifies the exact SKU and grades its condition from the photo — and shows its work: confidence, the candidates it weighed, and evidence lines for the grade, marked on the photo itself.
 3. **A flash auction starts** among every buyer agent whose order matches. It's a 60-second ascending-clock auction. The price ticks up, and each agent drops out once the price passes what its buyer would pay *for this specific item and grade*. The seller watches the bids climb live on their phone.
 4. **The seller decides with certainty.** "Cleared at $38. You net $34.20 after fees. Rack price $6." They buy the item, confirm with a photo, and the buyer's card is charged.
 5. **The item ships, and funds release to the seller on delivery** (Stripe Connect).

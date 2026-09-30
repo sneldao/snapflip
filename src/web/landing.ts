@@ -964,7 +964,7 @@ landing.get("/", async (c) => {
           <div class="r"><strong>▣ Your max is law</strong>
             <span>Enforced in code, not the prompt. The model can only bid lower.</span></div>
           <div class="r"><strong>◉ Charged on proof</strong>
-            <span>Captured only after the seller buys it and sends an in-hand photo.</span></div>
+            <span>Captured only after the seller sends an in-hand photo — and vision checks it's the same item that sold.</span></div>
           <div class="r"><strong>⌗ Paid on delivery</strong>
             <span>The seller's payout releases once the item arrives.</span></div>
           <div class="r"><strong>✦ Every exit explained</strong>
@@ -974,7 +974,7 @@ landing.get("/", async (c) => {
       <section class="band faq" id="faq">
         <p class="sec-label">Fair questions</p>
         <details><summary>What if nobody bids?</summary><p>You walk away. No listing, no fee, no dead inventory. The snap cost you 10 seconds.</p></details>
-        <details><summary>When is my card actually charged?</summary><p>Only after the seller buys the item and sends an in-hand photo. Before that it's an authorization hold at the clearing price — never your max.</p></details>
+        <details><summary>When is my card actually charged?</summary><p>Only after the seller buys the item and sends an in-hand photo — which vision checks against the original snap before a cent moves. Before that it's an authorization hold at the clearing price — never your max.</p></details>
         <details><summary>What stops fakes?</summary><p>AI vision checks every snap for repro tells, and the auction engine hard-rejects anything flagged. Grade caps let buyers skip rough copies.</p></details>
         <details><summary>Do I need Telegram or Claude?</summary><p>Resellers use Telegram. Collectors can use the web, text Scout (+1 650 315 6536), Claude (MCP connector) or the Brainbase concierge — same order book.</p></details>
         <details><summary>What does it cost?</summary><p>Collecting is free. Sellers pay 10% only when it sells. Optional Buyer Plus ($6/mo) wins tie-breaks.</p></details>
@@ -1034,7 +1034,7 @@ landing.get("/sell", (c) => {
         <h2>At the rack</h2>
         <div class="steps">
           <div class="step"><span class="num">01</span><strong>Snap — 10s</strong>
-            <span class="muted">Send one photo to the bot. AI vision IDs the exact item and grades it on the spot.</span></div>
+            <span class="muted">Send one photo to the bot. AI vision IDs the exact item, grades it, and shows its work — confidence, the evidence it saw, marked on your photo.</span></div>
           <div class="step"><span class="num">02</span><strong>Watch — 60s</strong>
             <span class="muted">Collector agents bid on a live clock, right in the chat. You see every tick.</span></div>
           <div class="step"><span class="num">03</span><strong>Decide</strong>

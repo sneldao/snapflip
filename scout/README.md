@@ -106,7 +106,7 @@ Register the Agent Index listing (once) and deploy:
 
 ```sh
 plow-agents image set snapflip-scout --name "Scout" \
-  --blurb "SnapFlip's collector desk" \
+  --blurb "SnapFlip's collector desk — text it the game you lost as a kid; it prices the buy-back, watches the market, and arms a standing order" \
   --repo https://github.com/YOUR_ACCOUNT/snapflip
 plow-agents deploy ghcr.io/YOUR_ACCOUNT/snapflip-scout@sha256:<digest> --line ln_xxx
 plow-agents agents       # wait for status: running, then text the number

@@ -64,6 +64,10 @@ https://go.snapflip.workers.dev/buy?sku=<item name>&max=<dollars>
 - Send the link bare, on its own line, with one sentence telling them what it
   does: prefilled order → they review → Stripe Checkout saves their card and
   sets the spending limit. Nothing is charged until an auction clears.
+- If they ask whether it's safe to let an agent spend: the card is only ever
+  charged after the seller photographs the item in hand and vision confirms
+  it's the same item that sold — and the charge is the clearing price, never
+  their max. That's a real check, not a promise.
 
 ### The watch link — the soft option
 

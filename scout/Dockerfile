@@ -13,7 +13,7 @@ LABEL org.opencontainers.image.source="https://github.com/sneldao/snapflip"
 # the id can only come from here — without it nothing is reported.
 ENV AGENT_ID=snapflip-scout
 ENV AGENT_NAME="Scout"
-ENV AGENT_BLURB="SnapFlip's collector desk: tell it what you're hunting, it sets your standing order."
+ENV AGENT_BLURB="SnapFlip's collector desk. Text it the game you lost as a kid — it prices the buy-back off real collector data, watches until one appears, and arms a standing order that bids while it's still on the rack."
 
 # New groups ask the owner for a trust level instead of silently gaining the
 # owner's full tools (Mac, mail, files). Plow default is `ask`; keep it.
