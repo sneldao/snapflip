@@ -209,8 +209,9 @@ async function readSnap(env: Env, chatId: number, fileId: string, mediaType: Ima
     .bind(snapId, sellerId, r2Key, id.confidence)
     .run();
 
-  // The model's collector remark opens every outcome: acknowledge what they found before anything else.
-  const remark = id.remark ? `\n<i>${esc(id.remark)}</i>` : "";
+  const pct = Math.round(id.confidence * 100);
+  const alts = [...new Set((id.alternatives ?? []).map((a) => a.title).filter((t) => t && t !== id.title))].slice(0, 2);
+  const remark = id.remark ? `\n  <i>${esc(id.remark)}</i>` : "";
 
   // Not a game: be straight about scope instead of implying a buyer might appear.
   if (id.category !== "retro-game") {
@@ -219,7 +220,7 @@ async function readSnap(env: Env, chatId: number, fileId: string, mediaType: Ima
       env,
       chatId,
       statusId,
-      `${soon ? "Nice find" : "That looks like"} — <b>${esc(id.title)}</b>.${remark}\n\n` +
+      `&gt; reading label… ✓ not a game — <b>${esc(id.title)}</b>${remark}\n\n` +
         (soon ? `SnapFlip trades retro games today — ${soon} is next on the rack.` : "SnapFlip only handles retro games right now.") +
         `\n▸ Snap a Game Boy, N64 or SNES game to see who wants it.`,
       soon ? [[{ text: `Tell me when ${soon} opens`, callback_data: `interest:${id.category}` }]] : undefined,
@@ -227,9 +228,12 @@ async function readSnap(env: Env, chatId: number, fileId: string, mediaType: Ima
     return;
   }
 
-  // Confident: grade and go straight to the reserve prompt.
+  // Confident: tick the line, then grade and go straight to the reserve prompt.
   if (id.skuId && id.confidence >= CONFIDENCE_THRESHOLD) {
-    return finalizeIdentification(env, chatId, snapId, id.skuId, id.title, statusId, id.remark);
+    const log = [`&gt; reading label… ✓ <b>${esc(id.title)}</b> · ${pct}%`];
+    if (alts.length) log.push(`  also considered: ${alts.map(esc).join(" · ")}`);
+    if (id.remark) log.push(`  <i>${esc(id.remark)}</i>`);
+    return finalizeIdentification(env, chatId, snapId, id.skuId, id.title, statusId, log);
   }
 
   // Low confidence: let the seller pick from the top matches instead of guessing wrong.
@@ -239,7 +243,7 @@ async function readSnap(env: Env, chatId: number, fileId: string, mediaType: Ima
       env,
       chatId,
       statusId,
-      `${id.title ? `Looks like <b>${esc(id.title)}</b>…${remark}\n\nBut I want to be sure before agents bid.` : "Not sure which one this is."} Tap the match:`,
+      `&gt; reading label… ?${id.title ? ` best guess <b>${esc(id.title)}</b> · ${pct}%` : ""}${remark}\n\nI want to be sure before agents bid — tap the match:`,
       options.map((o) => [{ text: o.title, callback_data: `pick:${snapId}:${o.skuId}` }]),
     );
     return;
@@ -252,7 +256,7 @@ async function readSnap(env: Env, chatId: number, fileId: string, mediaType: Ima
       env,
       chatId,
       statusId,
-      `Nice find — <b>${esc(id.title)}</b>.${remark}\n\nNo agents are hunting this one yet.${extras.line}\n▸ Snap the next game, or tap below and I'll ping you if a collector starts looking.`,
+      `&gt; reading label… ✓ <b>${esc(id.title)}</b> · ${pct}%${remark}\n\nNo agents are hunting this one yet.${extras.line}\n▸ Snap the next game, or tap below and I'll ping you if a collector starts looking.`,
       extras.buttons,
     );
     return;
@@ -261,15 +265,16 @@ async function readSnap(env: Env, chatId: number, fileId: string, mediaType: Ima
     env,
     chatId,
     statusId,
-    `${id.title ? `I think that's <b>${esc(id.title)}</b>, but the label's hard to read.` : "I can't quite make out the label."}${remark}\n▸ One more try? Label flat, well lit, filling the frame.`,
+    `&gt; reading label… ?${id.title ? ` maybe <b>${esc(id.title)}</b>` : ""} — the label's hard to read.${remark}\n▸ One more try? Label flat, well lit, filling the frame.`,
     demand,
   );
 }
 
 /** Grade the (now-known) item, save it against the snap, and prompt the seller for a reserve.
- *  Edits the status message in place so the photo flow is one message. */
-async function finalizeIdentification(env: Env, chatId: number, snapId: string, skuId: string, title: string, statusMsgId?: number, remark?: string): Promise<void> {
-  const aside = remark ? `\n<i>${esc(remark)}</i>` : "";
+ *  The status message is an accumulating work log: each stage ticks off where it stood —
+ *  identification with confidence + runners-up, grading with its evidence lines, then demand. */
+async function finalizeIdentification(env: Env, chatId: number, snapId: string, skuId: string, title: string, statusMsgId?: number, log?: string[]): Promise<void> {
+  const lines = log ?? [`&gt; reading label… ✓ <b>${esc(title)}</b> — your pick`];
   const row = await env.DB.prepare("SELECT seller_id, r2_key FROM snaps WHERE id = ?").bind(snapId).first<{ seller_id: string; r2_key: string }>();
   if (!row) {
     await edit(env, chatId, statusMsgId, "That photo expired — snap it again.");
@@ -280,30 +285,39 @@ async function finalizeIdentification(env: Env, chatId: number, snapId: string, 
     await edit(env, chatId, statusMsgId, "Lost the photo — snap it again.");
     return;
   }
-  await edit(env, chatId, statusMsgId, `<b>${esc(title)}</b>${aside}\n\n&gt; grading condition…`);
+  await edit(env, chatId, statusMsgId, lines.join("\n") + "\n&gt; grading condition…");
   await typing(env, chatId);
   const ct = obj.httpMetadata?.contentType ?? "image/jpeg";
   const g = await grade(env, await obj.arrayBuffer(), title, (VISION_TYPES.includes(ct) ? ct : "image/jpeg") as ImageType);
-  await env.DB.prepare("UPDATE snaps SET sku_id = ?, grade = ?, grade_notes = ?, flags_json = ? WHERE id = ?")
-    .bind(skuId, g.grade, g.notes, JSON.stringify(g.flags), snapId)
+  await env.DB.prepare("UPDATE snaps SET sku_id = ?, grade = ?, grade_notes = ?, flags_json = ?, findings_json = ? WHERE id = ?")
+    .bind(skuId, g.grade, g.notes, JSON.stringify(g.flags), JSON.stringify(g.findings ?? []), snapId)
     .run();
+
+  lines.push(`&gt; grading condition… ✓ grade ${g.grade}`);
+  for (const f of g.findings ?? []) lines.push(`  · ${esc(f.area)} — ${esc(f.observation)}`);
+  if (!(g.findings ?? []).length && g.notes) lines.push(`  ${esc(g.notes)}`);
+  const flags = (g.flags ?? []).map((f) => esc(f.replace(/_/g, " ")));
+  if (flags.length) lines.push(`  ⚑ flagged: ${flags.join(", ")}`);
 
   const snap: Snap = {
     id: snapId, sellerId: row.seller_id, r2Key: row.r2_key, skuId, title, confidence: 1,
-    grade: g.grade, gradeNotes: g.notes, flags: g.flags, rackCents: null, reserveCents: null,
+    grade: g.grade, gradeNotes: g.notes, findings: g.findings, flags: g.flags, rackCents: null, reserveCents: null,
   };
+  await edit(env, chatId, statusMsgId, lines.join("\n") + "\n&gt; checking the book…");
   const eligible = (await findCandidates(env, snap)).filter((v) => v.eligible).length;
   // Don't reveal bid amounts: they're private to each buyer agent.
   let buttons: Buttons | undefined;
   let tail: string;
   if (eligible) {
-    tail = `<b>${eligible} buyer agent${eligible === 1 ? "" : "s"}</b> ready to bid.\n▸ Reply with a floor price (e.g. <code>10</code>) to open a 60s auction.`;
+    lines.push(`&gt; checking the book… ✓ ${eligible} buyer agent${eligible === 1 ? "" : "s"} armed`);
+    tail = `▸ Reply with a floor price (e.g. <code>10</code>) to open a 60s auction.`;
   } else {
     const extras = await noBuyerExtras(env, row.seller_id, snapId, skuId, title);
-    tail = `No standing orders for this one yet.${extras.line}\n▸ Snap the next game, or tap below and I'll ping you if a collector starts looking.`;
+    lines.push("&gt; checking the book… — none hunting it yet");
+    tail = `${extras.line}\n▸ Snap the next game, or tap below and I'll ping you if a collector starts looking.`;
     buttons = extras.buttons;
   }
-  await edit(env, chatId, statusMsgId, `<b>${esc(title)}</b> · grade ${g.grade}${aside}\n${esc(g.notes)}\n\n${tail}`, buttons);
+  await edit(env, chatId, statusMsgId, lines.join("\n") + `\n\n${tail}`, buttons);
 }
 
 async function handleReserve(env: Env, msg: TgMessage, dollars: number): Promise<void> {

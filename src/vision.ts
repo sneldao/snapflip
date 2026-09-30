@@ -58,15 +58,21 @@ Shape: {"category": string, "skuId": string|null, "title": string, "confidence":
 
 export async function grade(env: Env, photo: ArrayBuffer, title: string, mediaType: MediaType = "image/jpeg"): Promise<GradeReport> {
   if (!llmAvailable(env)) {
-    return { grade: "B", notes: "Stub grade: light label wear.", flags: ["label_wear"] };
+    return { grade: "B", notes: "Stub grade: light label wear.", flags: ["label_wear"], findings: [{ area: "label", observation: "light wear" }] };
   }
 
   // TODO(A): calibrate grades against a few known carts.
-  return claudeJson<GradeReport>(env, {
+  const out = await claudeJson<GradeReport>(env, {
     system: `You grade the condition of a "${title}" cartridge from a photo.
 Grades: A = near mint, B = light wear, C = heavy wear/label damage, D = damaged or incomplete.
 Flags (only if visible): ${CONDITION_FLAGS.join(", ")}.
-Shape: {"grade": "A"|"B"|"C"|"D", "notes": string (one sentence), "flags": string[]}`,
+"findings": the evidence you graded on — up to 4 short {"area", "observation"} pairs naming WHERE on the item you saw it (e.g. "label", "top edge", "cart shell", "pins", "back sticker"). Name only what is actually visible; if the photo is clean, say so in one finding ("shell — clean, no scratches").
+Shape: {"grade": "A"|"B"|"C"|"D", "notes": string (one sentence), "flags": string[], "findings": [{"area": string, "observation": string}]}`,
     content: [image(photo, mediaType), { type: "text", text: "Grade this item." }],
   });
+  out.findings = (out.findings ?? [])
+    .filter((f) => f && typeof f.area === "string" && typeof f.observation === "string")
+    .slice(0, 4)
+    .map((f) => ({ area: f.area.slice(0, 40), observation: f.observation.slice(0, 80) }));
+  return out;
 }

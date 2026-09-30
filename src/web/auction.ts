@@ -7,8 +7,43 @@ import type { App } from "../lib/util";
 
 export const auctionPage = new Hono<App>();
 
-auctionPage.get("/a/:id", (c) =>
-  c.html(
+auctionPage.get("/a/:id", async (c) => {
+  // The appraisal slab — the work the agent did, printed like a grading label.
+  const appraisal = await c.env.DB.prepare(
+    `SELECT sn.id AS snap_id, sn.grade, sn.grade_notes, sn.flags_json, sn.findings_json, sn.confidence,
+            sk.platform
+       FROM auctions a JOIN snaps sn ON sn.id = a.snap_id LEFT JOIN skus sk ON sk.id = sn.sku_id
+      WHERE a.id = ?`,
+  )
+    .bind(c.req.param("id"))
+    .first<{
+      snap_id: string; grade: string | null; grade_notes: string | null;
+      flags_json: string; findings_json: string; confidence: number | null; platform: string | null;
+    }>();
+  const findings: { area: string; observation: string }[] = appraisal?.findings_json
+    ? JSON.parse(appraisal.findings_json)
+    : [];
+  const flags: string[] = appraisal?.flags_json ? JSON.parse(appraisal.flags_json) : [];
+  const slab = appraisal?.grade
+    ? html`<div class="card">
+        <h2>appraisal · cert ${appraisal.snap_id}</h2>
+        <div class="slabline">
+          <span class="slabgrade slab-${appraisal.grade}">${appraisal.grade}</span>
+          <span>
+            ${appraisal.platform ? html`<span class="muted">${appraisal.platform} · </span>` : ""}
+            ${appraisal.confidence != null ? html`<span class="muted">identified ${Math.round(appraisal.confidence * 100)}%</span>` : ""}
+          </span>
+        </div>
+        ${findings.length
+          ? html`<ul class="feed">${findings.map((f) => html`<li>${f.area} — ${f.observation}</li>`)}</ul>`
+          : appraisal.grade_notes
+            ? html`<p class="muted">${appraisal.grade_notes}</p>`
+            : null}
+        ${flags.length ? html`<p class="muted">⚑ ${flags.map((f) => f.replace(/_/g, " ")).join(" · ")}</p>` : null}
+      </div>`
+    : null;
+
+  return c.html(
     layout(
       "SnapFlip: live auction",
       html`<style>
@@ -42,6 +77,14 @@ auctionPage.get("/a/:id", (c) =>
         .chip-a.out .nm { text-decoration: line-through; }
         .chip-a .nm { font-family: var(--font-num); font-size: 1.1rem; line-height: 1; }
         .chip-a .why { display: block; color: var(--muted); font-size: 0.72rem; font-family: var(--font-body); }
+        /* The appraisal slab: grade reads like a printed grading label. */
+        .slabline { display: flex; align-items: center; gap: 14px; margin-bottom: 8px; }
+        .slabgrade { font-family: var(--font-num); font-size: 3rem; line-height: 1; color: var(--phos);
+          text-shadow: 0 0 20px rgba(255, 179, 56, 0.5); border: 1px solid var(--phos-dim);
+          border-radius: 6px; padding: 2px 14px; }
+        .slabgrade.slab-C { color: #e08a2e; border-color: #8a5c10; }
+        .slabgrade.slab-D { color: var(--red); border-color: var(--red); }
+        .slabline + .feed { margin-top: 4px; }
       </style>
       <div id="flash"></div>
       <p><span class="badge off" id="status">CONNECTING</span></p>
@@ -65,6 +108,7 @@ auctionPage.get("/a/:id", (c) =>
           <p class="muted" id="nophoto" hidden>Item photo unavailable.</p>
         </div>
       </div>
+      ${slab}
       <div class="card">
         <h2>Agents in the hunt</h2>
         <div class="agents" id="agents"></div>
@@ -209,5 +253,5 @@ auctionPage.get("/a/:id", (c) =>
       </script>`,
       { crt: true, image: `${c.env.PUBLIC_URL}/og.png` },
     ),
-  ),
-);
+  );
+});

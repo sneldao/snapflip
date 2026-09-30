@@ -91,6 +91,8 @@ export interface GradeReport {
   grade: Grade;
   notes: string;
   flags: string[]; // e.g. "reproduction", "water_damage", "label_wear"
+  /** What the grader actually saw — the appraisal's evidence lines. */
+  findings: { area: string; observation: string }[];
 }
 
 export interface Snap {
@@ -102,6 +104,7 @@ export interface Snap {
   confidence: number;
   grade: Grade;
   gradeNotes: string;
+  findings?: { area: string; observation: string }[];
   flags: string[];
   rackCents: number | null;
   reserveCents: number | null;
