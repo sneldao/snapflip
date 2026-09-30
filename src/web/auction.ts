@@ -1,7 +1,7 @@
 // Owner: A. Live auction page: subscribes to /a/{id}/ws and renders the ticker and dropouts.
 // The money shot: polaroid snap, shutter flash, pixel-bot agents, boss-bar clock, GOING ONCE.
 import { Hono } from "hono";
-import { html } from "hono/html";
+import { html, raw } from "hono/html";
 import { layout } from "./layout";
 import type { App } from "../lib/util";
 
@@ -10,20 +10,27 @@ export const auctionPage = new Hono<App>();
 auctionPage.get("/a/:id", async (c) => {
   // The appraisal slab — the work the agent did, printed like a grading label.
   const appraisal = await c.env.DB.prepare(
-    `SELECT sn.id AS snap_id, sn.grade, sn.grade_notes, sn.flags_json, sn.findings_json, sn.confidence,
-            sk.platform
+    `SELECT sn.id AS snap_id, sn.grade, sn.grade_notes, sn.flags_json, sn.findings_json, sn.item_box_json,
+            sn.confidence, sk.platform
        FROM auctions a JOIN snaps sn ON sn.id = a.snap_id LEFT JOIN skus sk ON sk.id = sn.sku_id
       WHERE a.id = ?`,
   )
     .bind(c.req.param("id"))
     .first<{
       snap_id: string; grade: string | null; grade_notes: string | null;
-      flags_json: string; findings_json: string; confidence: number | null; platform: string | null;
+      flags_json: string; findings_json: string; item_box_json: string | null;
+      confidence: number | null; platform: string | null;
     }>();
-  const findings: { area: string; observation: string }[] = appraisal?.findings_json
+  const findings: { area: string; observation: string; box?: [number, number, number, number] }[] = appraisal?.findings_json
     ? JSON.parse(appraisal.findings_json)
     : [];
   const flags: string[] = appraisal?.flags_json ? JSON.parse(appraisal.flags_json) : [];
+  const itemBox: [number, number, number, number] | null = appraisal?.item_box_json ? JSON.parse(appraisal.item_box_json) : null;
+  // Boxes on the photo are numbered to match the slab's evidence list.
+  const spots = [
+    ...(itemBox ? [{ n: 0, box: itemBox, label: "the item" }] : []),
+    ...findings.flatMap((f, i) => (f.box ? [{ n: i + 1, box: f.box, label: f.area }] : [])),
+  ];
   const slab = appraisal?.grade
     ? html`<div class="card">
         <h2>appraisal · cert ${appraisal.snap_id}</h2>
@@ -35,7 +42,7 @@ auctionPage.get("/a/:id", async (c) => {
           </span>
         </div>
         ${findings.length
-          ? html`<ul class="feed">${findings.map((f) => html`<li>${f.area} — ${f.observation}</li>`)}</ul>`
+          ? html`<ul class="feed">${findings.map((f, i) => html`<li>${f.box ? html`<span class="spotn">${i + 1}</span> ` : null}${f.area} — ${f.observation}</li>`)}</ul>`
           : appraisal.grade_notes
             ? html`<p class="muted">${appraisal.grade_notes}</p>`
             : null}
@@ -85,6 +92,26 @@ auctionPage.get("/a/:id", async (c) => {
         .slabgrade.slab-C { color: #e08a2e; border-color: #8a5c10; }
         .slabgrade.slab-D { color: var(--red); border-color: var(--red); }
         .slabline + .feed { margin-top: 4px; }
+        /* Annotated snap: viewfinder boxes over the photo, numbered to the slab. */
+        .annot { position: relative; }
+        .annot .beam { position: absolute; left: 0; right: 0; height: 3px; top: 0; opacity: 0;
+          background: linear-gradient(90deg, transparent, rgba(255,179,56,0.85), transparent);
+          box-shadow: 0 0 12px rgba(255,179,56,0.5); pointer-events: none; }
+        .annot.on .beam { animation: beam 0.9s ease-in-out 0.15s; }
+        @keyframes beam { 0% { top: 0; opacity: 0; } 12% { opacity: 1; } 88% { opacity: 1; } 100% { top: 100%; opacity: 0; } }
+        .anbox { position: absolute; border: 1.5px dashed var(--phos); border-radius: 3px;
+          box-shadow: 0 0 10px rgba(255,179,56,0.35), inset 0 0 10px rgba(255,179,56,0.12);
+          opacity: 0; pointer-events: none; }
+        .annot.on .anbox { animation: spotin 0.35s cubic-bezier(0.2, 0.7, 0.3, 1.4) forwards; }
+        @keyframes spotin { from { opacity: 0; transform: scale(1.25); } to { opacity: 1; transform: none; } }
+        .anbox.item { border-style: solid; border-color: rgba(255,179,56,0.55); }
+        .anbox .antag { position: absolute; top: -9px; left: -5px; min-width: 16px; height: 16px;
+          background: var(--phos); color: #1c0e02; font-family: var(--font-num); font-size: 12px;
+          line-height: 16px; text-align: center; border-radius: 3px; padding: 0 4px; }
+        .anbox.item .antag { background: var(--phos-dim); color: var(--crt); font-size: 10px; }
+        .spotn { display: inline-block; min-width: 15px; height: 15px; background: var(--phos);
+          color: #1c0e02; border-radius: 3px; font-family: var(--font-num); font-size: 11px;
+          line-height: 15px; text-align: center; padding: 0 3px; }
       </style>
       <div id="flash"></div>
       <p><span class="badge off" id="status">CONNECTING</span></p>
@@ -102,7 +129,9 @@ auctionPage.get("/a/:id", async (c) => {
         <div class="card" style="flex: 1 1 260px">
           <h2>The snap</h2>
           <div class="polaroid">
-            <img src=${`/a/${c.req.param("id")}/photo`} alt="Photo of the item up for auction" onload="document.getElementById('nophoto').hidden = true" onerror="this.closest('.polaroid').remove();document.getElementById('nophoto').hidden = false" />
+            <div class="annot" id="annot"><div class="beam"></div>
+              <img id="snapimg" src=${`/a/${c.req.param("id")}/photo`} alt="Photo of the item up for auction" onload="document.getElementById('nophoto').hidden = true; placeSpots();" onerror="this.closest('.polaroid').remove();document.getElementById('nophoto').hidden = false" />
+            </div>
             <div class="cap" id="cap">the snap</div>
           </div>
           <p class="muted" id="nophoto" hidden>Item photo unavailable.</p>
@@ -118,7 +147,38 @@ auctionPage.get("/a/:id", async (c) => {
         <ul class="feed" id="feed"></ul>
       </div>
       <script>
+        var SPOTS = ${raw(JSON.stringify(spots).replace(/</g, "\\u003c"))};
         var $ = function (id) { return document.getElementById(id); };
+        // Boxes are normalized to the image content; the <img> may letterbox
+        // (object-fit: contain), so map through the rendered content rect.
+        function placeSpots() {
+          var img = $("snapimg"), wrap = $("annot");
+          if (!img || !wrap || !img.naturalWidth) return;
+          var scale = Math.min(img.clientWidth / img.naturalWidth, img.clientHeight / img.naturalHeight);
+          var cw = img.naturalWidth * scale, ch = img.naturalHeight * scale;
+          var ox = (img.clientWidth - cw) / 2, oy = (img.clientHeight - ch) / 2;
+          SPOTS.forEach(function (s, i) {
+            var d = document.createElement("div");
+            d.className = "anbox" + (s.n === 0 ? " item" : "");
+            d.style.left = (ox + s.box[0] * cw) + "px";
+            d.style.top = (oy + s.box[1] * ch) + "px";
+            d.style.width = (s.box[2] * cw) + "px";
+            d.style.height = (s.box[3] * ch) + "px";
+            d.style.animationDelay = (0.55 + i * 0.22) + "s";
+            var tag = document.createElement("span");
+            tag.className = "antag";
+            tag.textContent = s.n === 0 ? "◉" : String(s.n);
+            tag.title = s.label;
+            d.appendChild(tag);
+            wrap.appendChild(d);
+          });
+          if (SPOTS.length) wrap.classList.add("on");
+        }
+        window.addEventListener("resize", function () {
+          var wrap = $("annot");
+          if (wrap) Array.prototype.forEach.call(wrap.querySelectorAll(".anbox"), function (d) { d.remove(); });
+          placeSpots();
+        });
         var usd = function (c) { return "$" + (c / 100).toFixed(0); };
         var endsAt = 0, startAt = null, span = 60000, lastPrice = -1, closeCount = 0, wasClosing = false, flashed = false;
         var seen = new Set();

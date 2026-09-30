@@ -62,7 +62,8 @@ CREATE TABLE IF NOT EXISTS snaps (
   grade TEXT,                              -- A | B | C | D
   grade_notes TEXT,
   flags_json TEXT NOT NULL DEFAULT '[]',
-  findings_json TEXT NOT NULL DEFAULT '[]', -- [{area, observation}] — the appraisal evidence
+  findings_json TEXT NOT NULL DEFAULT '[]', -- [{area, observation, box?}] — the appraisal evidence
+  item_box_json TEXT,                      -- normalized [x,y,w,h] bounds of the item in the photo
   rack_cents INTEGER,
   reserve_cents INTEGER,
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))

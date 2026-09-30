@@ -66,13 +66,22 @@ export async function grade(env: Env, photo: ArrayBuffer, title: string, mediaTy
     system: `You grade the condition of a "${title}" cartridge from a photo.
 Grades: A = near mint, B = light wear, C = heavy wear/label damage, D = damaged or incomplete.
 Flags (only if visible): ${CONDITION_FLAGS.join(", ")}.
-"findings": the evidence you graded on — up to 4 short {"area", "observation"} pairs naming WHERE on the item you saw it (e.g. "label", "top edge", "cart shell", "pins", "back sticker"). Name only what is actually visible; if the photo is clean, say so in one finding ("shell — clean, no scratches").
-Shape: {"grade": "A"|"B"|"C"|"D", "notes": string (one sentence), "flags": string[], "findings": [{"area": string, "observation": string}]}`,
+"findings": the evidence you graded on — up to 4 {"area", "observation"} pairs naming WHERE on the item you saw it (e.g. "label", "top edge", "cart shell", "pins", "back sticker"). Name only what is actually visible; if the photo is clean, say so in one finding ("shell — clean, no scratches"). When an observation lives in a visible spot, add "box": [x, y, w, h] — normalized 0-1 bounds of that region in the photo.
+"itemBox": [x, y, w, h] — normalized 0-1 bounds of the item itself (tight around it).
+Shape: {"grade": "A"|"B"|"C"|"D", "notes": string (one sentence), "flags": string[], "itemBox": [x,y,w,h]|null, "findings": [{"area": string, "observation": string, "box": [x,y,w,h]?}]}`,
     content: [image(photo, mediaType), { type: "text", text: "Grade this item." }],
   });
   out.findings = (out.findings ?? [])
     .filter((f) => f && typeof f.area === "string" && typeof f.observation === "string")
     .slice(0, 4)
-    .map((f) => ({ area: f.area.slice(0, 40), observation: f.observation.slice(0, 80) }));
+    .map((f) => ({ area: f.area.slice(0, 40), observation: f.observation.slice(0, 80), box: cleanBox(f.box) }));
+  out.itemBox = cleanBox(out.itemBox);
   return out;
+}
+
+/** Normalized [x,y,w,h] or undefined — drop malformed model output. */
+function cleanBox(b: unknown): [number, number, number, number] | undefined {
+  if (!Array.isArray(b) || b.length !== 4 || b.some((n) => typeof n !== "number" || !isFinite(n))) return undefined;
+  const [x, y, w, h] = b.map((n: number) => Math.min(1, Math.max(0, n)));
+  return w > 0.02 && h > 0.02 ? [x, y, w, h] : undefined;
 }

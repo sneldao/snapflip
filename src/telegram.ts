@@ -289,8 +289,8 @@ async function finalizeIdentification(env: Env, chatId: number, snapId: string, 
   await typing(env, chatId);
   const ct = obj.httpMetadata?.contentType ?? "image/jpeg";
   const g = await grade(env, await obj.arrayBuffer(), title, (VISION_TYPES.includes(ct) ? ct : "image/jpeg") as ImageType);
-  await env.DB.prepare("UPDATE snaps SET sku_id = ?, grade = ?, grade_notes = ?, flags_json = ?, findings_json = ? WHERE id = ?")
-    .bind(skuId, g.grade, g.notes, JSON.stringify(g.flags), JSON.stringify(g.findings ?? []), snapId)
+  await env.DB.prepare("UPDATE snaps SET sku_id = ?, grade = ?, grade_notes = ?, flags_json = ?, findings_json = ?, item_box_json = ? WHERE id = ?")
+    .bind(skuId, g.grade, g.notes, JSON.stringify(g.flags), JSON.stringify(g.findings ?? []), g.itemBox ? JSON.stringify(g.itemBox) : null, snapId)
     .run();
 
   lines.push(`&gt; grading condition… ✓ grade ${g.grade}`);

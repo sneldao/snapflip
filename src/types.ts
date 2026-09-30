@@ -91,8 +91,11 @@ export interface GradeReport {
   grade: Grade;
   notes: string;
   flags: string[]; // e.g. "reproduction", "water_damage", "label_wear"
-  /** What the grader actually saw — the appraisal's evidence lines. */
-  findings: { area: string; observation: string }[];
+  /** What the grader actually saw — the appraisal's evidence lines.
+   *  `box` is normalized [x,y,w,h] in the photo when the spot is localizable. */
+  findings: { area: string; observation: string; box?: [number, number, number, number] }[];
+  /** Normalized [x,y,w,h] bounds of the item in the photo. */
+  itemBox?: [number, number, number, number];
 }
 
 export interface Snap {
@@ -104,7 +107,8 @@ export interface Snap {
   confidence: number;
   grade: Grade;
   gradeNotes: string;
-  findings?: { area: string; observation: string }[];
+  findings?: { area: string; observation: string; box?: [number, number, number, number] }[];
+  itemBox?: [number, number, number, number];
   flags: string[];
   rackCents: number | null;
   reserveCents: number | null;
