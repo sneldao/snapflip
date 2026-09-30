@@ -238,6 +238,55 @@ export async function fetchAndCacheMarket(env: Env, query: string): Promise<Reco
   return payload as Record<string, unknown>;
 }
 
+export const COLLECTION_MAX_ITEMS = 8;
+
+export interface CollectionItem {
+  display: string;
+  query: string;
+  refCents: number | null;
+  source: "pricecharting" | "web" | null;
+  matchedTitle: string | null;
+  looseCents: number | null;
+  cibCents: number | null;
+  newCents: number | null;
+}
+
+/** "What's my childhood box worth?" — one row per item, cache-first. Uncached
+ * lookups share the market_calls quota and stop politely when it's spent. */
+export async function collectionPrices(env: Env, items: string[]): Promise<CollectionItem[]> {
+  const out: CollectionItem[] = [];
+  for (const display of items) {
+    const query = display.toLowerCase();
+    const row: CollectionItem = {
+      display, query, refCents: null, source: null, matchedTitle: null,
+      looseCents: null, cibCents: null, newCents: null,
+    };
+    try {
+      let payload = await readMarketCache(env, query);
+      if (!payload) {
+        const calls = await env.DB.prepare(
+          "SELECT COUNT(*) AS n FROM market_calls WHERE at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-1 minute')",
+        ).first<{ n: number }>();
+        if ((calls?.n ?? 0) < RATE_LIMIT_PER_MIN) {
+          await env.DB.prepare("INSERT INTO market_calls DEFAULT VALUES").run();
+          payload = await fetchAndCacheMarket(env, query);
+        }
+      }
+      if (payload) {
+        row.refCents = marketRefCents(payload);
+        row.source = (payload.source as CollectionItem["source"]) ?? null;
+        const pc = payload.pricecharting as { title?: string; looseCents?: number | null; cibCents?: number | null; newCents?: number | null } | undefined;
+        row.matchedTitle = pc?.title ?? null;
+        row.looseCents = pc?.looseCents ?? null;
+        row.cibCents = pc?.cibCents ?? null;
+        row.newCents = pc?.newCents ?? null;
+      }
+    } catch { /* one bad item doesn't sink the box */ }
+    out.push(row);
+  }
+  return out;
+}
+
 market.get("/api/market", async (c) => {
   const raw = c.req.query("q") ?? "";
   const query = raw.trim().replace(/\s+/g, " ").toLowerCase();
@@ -261,4 +310,23 @@ market.get("/api/market", async (c) => {
   }
 
   return c.json({ ...payload, cached: false });
+});
+
+/** `?items=a|b|c` — up to 8 items, one market reference each, plus the total.
+ * The desk's collection-valuation backing; /box renders the receipt for humans. */
+market.get("/api/collection", async (c) => {
+  const items = (c.req.query("items") ?? "")
+    .split("|")
+    .map((s) => s.trim().replace(/\s+/g, " "))
+    .filter((s) => s.length >= 2 && s.length <= 140)
+    .slice(0, COLLECTION_MAX_ITEMS);
+  if (!items.length) return c.json({ error: "items must be 1-8 |-separated names, 2-140 chars each" }, 400);
+  if (!c.env.TAVILY_API_KEY) return c.json({ error: "market lookup not configured" }, 503);
+
+  const priced = await collectionPrices(c.env, items);
+  return c.json({
+    items: priced,
+    totalCents: priced.reduce((sum, i) => sum + (i.refCents ?? 0), 0),
+    priced: priced.filter((i) => i.refCents != null).length,
+  });
 });

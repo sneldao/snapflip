@@ -246,6 +246,34 @@ export const layout = (title: string, body: Body, opts: LayoutOpts = {}) => html
   </body>
 </html>`;
 
+/** Thrift-store till receipt: paper card, torn edges, barcode keyed to a seed. */
+export const receiptStyle = html`<style>
+  .receipt { background: #f4efe0; color: #1c1a14; border-radius: 2px; padding: 16px 20px;
+    margin: 22px 0; position: relative; box-shadow: 0 3px 14px rgba(58, 42, 16, 0.3);
+    font-family: var(--font-mono); }
+  .receipt::before, .receipt::after { content: ""; position: absolute; left: 0; right: 0; height: 7px;
+    background: linear-gradient(45deg, #f4efe0 5px, transparent 5px) 0 0 / 11px 11px repeat-x,
+      linear-gradient(-45deg, #f4efe0 5px, transparent 5px) 0 0 / 11px 11px repeat-x; }
+  .receipt::before { top: -7px; }
+  .receipt::after { bottom: -7px; transform: scaleY(-1); }
+  .receipt h2 { color: #1c1a14; letter-spacing: 0.1em; margin: 0 0 4px; }
+  .receipt .muted { color: #6b6552; }
+  .receipt ul { margin: 4px 0 10px; }
+  .receipt .rule { border-top: 1px dashed #b9b09a; padding-top: 8px; margin-top: 8px; }
+  .receipt .bc { display: flex; gap: 1px; height: 34px; justify-content: center; margin: 12px 0 2px; }
+  .receipt .bc i { background: #1c1a14; display: block; }
+  .receipt .thanks { text-align: center; color: #6b6552; font-size: 0.8rem; letter-spacing: 0.15em;
+    text-transform: uppercase; margin: 8px 0 0; }
+</style>`;
+
+/** Bars keyed to the seed — deterministic, and it looks like a real till barcode. */
+export const barcode = (seed: string) =>
+  html`<div class="bc">${seed
+    .replace(/[^a-z0-9]/gi, "")
+    .slice(0, 30)
+    .split("")
+    .map((ch) => html`<i style="width:${(ch.charCodeAt(0) % 4) + 1}px"></i>`)}</div>`;
+
 /** Category pipeline teaser — exact-identity collectibles beyond games. */
 export const soonRail = html`<div class="soon-rail">
   <span class="soon-tag">next on the rack</span>

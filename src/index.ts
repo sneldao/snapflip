@@ -10,6 +10,7 @@ import { checkMarketWatches } from "./pricewatch";
 import { stripeWebhook } from "./stripe-webhook";
 import { telegram } from "./telegram";
 import { auctionPage } from "./web/auction";
+import { box } from "./web/box";
 import { buy } from "./web/buy";
 import { watch } from "./web/watch";
 import { landing } from "./web/landing";
@@ -36,6 +37,7 @@ app.route("/", landing); // D
 app.route("/", market); // D
 app.route("/", buy); // D
 app.route("/", watch); // D
+app.route("/", box); // D
 app.route("/", auctionPage); // A
 app.route("/", telegram); // A
 app.route("/", orders); // B
