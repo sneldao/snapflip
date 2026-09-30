@@ -44,6 +44,6 @@ A 10% seller fee on the clearing price (`SELLER_FEE_BPS`, snapshotted per sale i
 | Stripe | Buyer spending limits (saved card charged off-session, cap enforced in code; Shared Payment Tokens slot in later), manual capture, Connect Express seller payouts via separate charges and transfers, webhooks |
 | Brainbase | Hosted buyer concierge worker (chat deployment) that creates standing orders through our API |
 
-**Live:** https://go.snapflip.workers.dev — landing page with real-time demand; `/buy` to set a standing order, `/mcp?token=…` as a Claude connector. Text the collector desk: **+1 650 315 6536** — Scout qualifies you, cites the live book, and hands off a prefilled order (or plays "guess the clearing price" if you're just browsing).
+**Live:** https://go.snapflip.workers.dev — landing page with real-time demand; `/buy` to set a standing order, `/mcp?token=…` as a Claude connector. Text the collector desk: **+1 650 315 6536** — Scout qualifies you, cites the live book, and hands off a prefilled order. Just browsing? Text it the thing you lost as a kid: it prices the buy-back off real market data (`/api/market`), appraises your whole childhood box (`/box`), and sets a price watch that pings you on Telegram when the tape dips (`/watch`).
 
 Docs: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/BUILD.md`](docs/BUILD.md), [`docs/DEMO.md`](docs/DEMO.md).

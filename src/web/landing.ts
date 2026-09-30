@@ -950,7 +950,7 @@ landing.get("/", async (c) => {
       </section>
       <section class="band" id="scout">
         <p class="sec-label">Text the desk <span class="badge live">live</span></p>
-        <p style="margin:0"><strong>Scout is our first hire</strong> — an agent on the collector desk, reachable like a person. Text it what you're hunting; it reads this book, advises a max, and hands you a prefilled order.</p>
+        <p style="margin:0"><strong>Scout is our first hire</strong> — an agent on the collector desk, reachable like a person. Text it what you're hunting; it reads this book, advises a max, and hands you a prefilled order. Or text it the thing you lost as a kid — it prices the buy-back off real market data, appraises your whole childhood box on a till receipt, and sets a watch that pings you on Telegram when the price dips.</p>
         <p style="margin:14px 0 0; display:flex; align-items:center; gap:16px; flex-wrap:wrap">
           <a class="button primary" href="sms:+16503156536">✆ Text Scout</a>
           <a class="tag" href="sms:+16503156536" style="text-decoration:none"><span class="tagtxt">+1 650 315 6536</span></a>

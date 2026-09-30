@@ -85,8 +85,10 @@ Match-time lookup (`findCandidates`, the `order_skus` join) is unaffected — it
 | `src/payments.ts` | Stripe: setup, off-session PaymentIntent (manual capture), capture, transfer, Connect onboarding, refund, void-stale-auth sweep (cron) |
 | `src/telegram.ts` | Seller and buyer bot messages, inline buttons, live auction message edits |
 | `src/mcp.ts` | Remote MCP server (`McpAgent`): buyer tools, authenticated per buyer by token |
+| `src/market.ts` | Real-world comps for the desk: `/api/market` (PriceCharting index via Tavily Extract, web-search fallback) and `/api/collection` (multi-item appraisal), both cache-first in `market_cache` and quota-guarded by `market_calls` |
+| `src/pricewatch.ts` | Cron pass over armed `market_watches`: re-reads the market tape and pings the collector's Telegram once their max is hit |
 | `src/lib/tokens.ts` | Per-buyer bearer tokens (`sf_…`): shown once, stored as SHA-256 (`buyers.token_hash`) |
-| `web/` | Landing page (footage-backed hero with the order form inline, snap · bid · sold demo synced to a simulated auction, live order book, guardrails, FAQ; see BUILD.md "Landing page" for the design principles and next step), footage served from `public/media` with byte ranges (`/media/*`), `/a/{id}` live auction page (polaroid snap, pixel-bot agent chips, boss-bar clock, GOING ONCE during soft-close — `AuctionView.closing`), `/buy` onboarding (optional per-grade caps are folded into the rules text the parser reads) and order management. Shared retro-terminal design system in `web/layout.ts` |
+| `web/` | Landing page (footage-backed hero with the order form inline, snap · bid · sold demo synced to a simulated auction, live order book, guardrails, FAQ; see BUILD.md "Landing page" for the design principles and next step), footage served from `public/media` with byte ranges (`/media/*`), `/a/{id}` live auction page (polaroid snap, pixel-bot agent chips, boss-bar clock, GOING ONCE during soft-close — `AuctionView.closing`), `/buy` onboarding (optional per-grade caps are folded into the rules text the parser reads) and order management, `/watch` price-watch arming + `/box` collection appraisal receipt. Shared retro-terminal design system in `web/layout.ts` |
 | `concierge/` | Brainbase agent manifest + instructions for the hosted buyer concierge (`snapflip-concierge`) |
 | `scout/` | Scout, the collector-desk agent — OpenClaw 2.0 on the Plow base image (own Dockerfile, persona, `snapflip` skill). Desk mode: hosted phone line, no credentials, public endpoints only. Personal mode: 1-click installs carry the owner's own `sf_` token to `/mcp`. MIT-licensed with the repo. |
 
@@ -100,6 +102,10 @@ Match-time lookup (`findCandidates`, the `order_skus` join) is unaffected — it
 | POST | `/api/buyers` | Concierge onboarding: creates buyer + token, returns `mcpUrl`, `setupUrl`, `telegramUrl` |
 | GET | `/api/orderbook` | Aggregated demand per SKU (landing page and seller "what's hot") |
 | GET | `/api/stats` | Live stats: demand, collectors, real transactions (excludes `b_demo_*` buyers) |
+| GET | `/api/market?q` | Collector-index comps (PriceCharting via Tavily Extract) with web-search fallback; `{ source, medianCents, pricecharting?: { looseCents, cibCents, newCents, variants } }` |
+| GET | `/api/collection?items=a\|b\|c` | Up to 8 items priced off the same tape, one `totalCents` — backs the desk's "what's my box worth" |
+| GET | `/watch?item&max` | Arms a `market_watches` row; page shows the current tape and hands off to a `t.me/<bot>?start=w_<code>` deep link that binds the collector's Telegram |
+| GET | `/box?items=a\|b\|c` | The appraisal artifact: per-item market prices and a total on a till receipt, with per-row watch links |
 | GET | `/qr` | Booth display: giant QR to `/buy` + live stats |
 | GET | `/a/{id}` | Public live auction page |
 | GET | `/a/{id}/ws` | WebSocket to `AuctionDO` |
@@ -135,7 +141,14 @@ order_skus (order_id, sku_id)                          -- index for matching
 snaps    (id, seller_id, r2_key, sku_id, confidence, grade, grade_notes, flags_json, rack_cents, reserve_cents, created_at)
 auctions (id, snap_id, status, started_at, ended_at, clearing_cents, winner_order_id, payment_intent_id, transfer_id)
 bids     (auction_id, order_id, event, price_cents, reason, at)   -- event: join | drop | raise | win
+platform_fees (auction_id, clearing_cents, fee_bps, fee_cents, express_fee_cents, created_at) -- fee snapshot per sale
+subscriptions (buyer_id, stripe_subscription_id, status, current_period_end, created_at)      -- Buyer Plus
+watches  (id, seller_id, snap_id, sku_id, title, active, notified_at, created_at)               -- seller "ping me on demand"
+category_interest (seller_id, category, created_at)               -- roadmap-category pings
 llm_cache (key, response, created_at)                           -- model response dedupe; key = SHA-256(request)
+market_cache (query, payload, fetched_at)                       -- /api/market responses, 24h TTL
+market_calls (at)                                               -- uncached-lookup rate-limit counter
+market_watches (id, code, query, display, max_cents, ref_cents, tg_chat_id, status, fired_at, created_at)
 ```
 
 Photos go in R2 (`snaps/{id}.jpg`). Live auction state lives in `AuctionDO` storage and is written to D1 when the auction ends. Per-order model verification runs inline, chunked at 5 concurrent calls per snap (`VERIFY_CONCURRENCY`).
@@ -149,7 +162,7 @@ Photos go in R2 (`snaps/{id}.jpg`). Live auction state lives in `AuctionDO` stor
 
 ## Secrets (`wrangler secret put`, never commit)
 
-`API_KEY`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, plus **at least one model provider**: `ANTHROPIC_API_KEY` or `FEATHERLESS_API_KEY` (OpenAI-compatible fallback; `FEATHERLESS_MODEL` var overrides the default model). Optional: `BRAINBASE_LABS_API_KEY`, `PRICECHARTING_API_KEY` (reference prices; otherwise model web search). `TELEGRAM_BOT_USERNAME` is a plain var, not a secret.
+`API_KEY`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, plus **at least one model provider**: `ANTHROPIC_API_KEY` or `FEATHERLESS_API_KEY` (OpenAI-compatible fallback; `FEATHERLESS_MODEL` var overrides the default model). Optional: `BRAINBASE_LABS_API_KEY`, `TAVILY_API_KEY` (powers `/api/market` + `/api/collection`; without it those endpoints 503 and the desk games fall back to the SnapFlip tape). `TELEGRAM_BOT_USERNAME` is a plain var, not a secret.
 
 The stub fallbacks for Stripe/Claude/Telegram are dev-only. Outside `ENVIRONMENT=development`, a boot guard (`missingSecrets` in `src/lib/util.ts`) refuses HTTP requests (500), skips queue batches (messages redeliver), and skips cron runs when any required secret is absent, so a misconfigured deploy fails loudly instead of silently running on stubs.
 

@@ -78,6 +78,24 @@ and the bot pings them when the market tape hits their max. Same params as
 when the price drops — an order actually grabs it." Offer the watch to the
 curious; offer the order to the committed.
 
+### The box — whole-collection valuation
+
+"What's my childhood box worth?" — when someone lists the pile they had
+(the games, the toys, the stack under the bed), price the lot:
+
+- `GET /api/collection?items=a|b|c` → `{ items: [{ display, refCents, source,
+  matchedTitle, looseCents, cibCents, newCents }], totalCents }` — up to 8
+  `|`-separated items, real market price each, one total.
+- The shareable artifact:
+  `https://go.snapflip.workers.dev/box?items=a|b|c` — a printed till-receipt
+  appraisal with per-item prices, a box total, and watch links. Send it bare;
+  it's the thing people screenshot.
+
+Check each `matchedTitle` before quoting — if the index matched a different
+product, say "no reliable tape on that one" rather than quoting it. A null
+`refCents` means the same. The closer writes itself: "want any of them back?
+A watch pings when the price dips — an order grabs the next one surfaced."
+
 ## Personal mode — snapflip MCP connected
 
 When the `snapflip` MCP server is configured (the owner pasted their `sf_…`
