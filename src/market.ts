@@ -209,18 +209,43 @@ async function searchSoldPrices(env: Env, query: string) {
   };
 }
 
+/** The single market reference a caller should quote: the collector index's
+ * loose price when the item is catalogued, else the web comps median. */
+export function marketRefCents(payload: {
+  medianCents?: number | null;
+  webMedianCents?: number | null;
+  pricecharting?: { looseCents?: number | null } | null;
+}): number | null {
+  return payload.pricecharting?.looseCents ?? payload.webMedianCents ?? payload.medianCents ?? null;
+}
+
+/** Fresh cached payload for a normalized query, or null on miss/stale. */
+export async function readMarketCache(env: Env, query: string): Promise<Record<string, unknown> | null> {
+  const row = await env.DB.prepare("SELECT payload, fetched_at FROM market_cache WHERE query = ?")
+    .bind(query)
+    .first<{ payload: string; fetched_at: string }>();
+  if (!row) return null;
+  if (Date.now() - Date.parse(row.fetched_at + (row.fetched_at.endsWith("Z") ? "" : "Z")) >= CACHE_TTL_MS) return null;
+  return JSON.parse(row.payload);
+}
+
+/** Structured collector index first; web snippets off-catalog. Caches the result. */
+export async function fetchAndCacheMarket(env: Env, query: string): Promise<Record<string, unknown>> {
+  const payload = (await lookupPriceCharting(env, query).catch(() => null)) ?? (await searchSoldPrices(env, query));
+  await env.DB.prepare("INSERT OR REPLACE INTO market_cache (query, payload) VALUES (?, ?)")
+    .bind(query, JSON.stringify(payload))
+    .run();
+  return payload as Record<string, unknown>;
+}
+
 market.get("/api/market", async (c) => {
   const raw = c.req.query("q") ?? "";
   const query = raw.trim().replace(/\s+/g, " ").toLowerCase();
   if (query.length < 2 || query.length > 140) return c.json({ error: "q must be 2-140 chars" }, 400);
   if (!c.env.TAVILY_API_KEY) return c.json({ error: "market lookup not configured" }, 503);
 
-  const cached = await c.env.DB.prepare("SELECT payload, fetched_at FROM market_cache WHERE query = ?")
-    .bind(query)
-    .first<{ payload: string; fetched_at: string }>();
-  if (cached && Date.now() - Date.parse(cached.fetched_at + (cached.fetched_at.endsWith("Z") ? "" : "Z")) < CACHE_TTL_MS) {
-    return c.json({ ...JSON.parse(cached.payload), cached: true });
-  }
+  const cached = await readMarketCache(c.env, query);
+  if (cached) return c.json({ ...cached, cached: true });
 
   const calls = await c.env.DB.prepare(
     "SELECT COUNT(*) AS n FROM market_calls WHERE at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-1 minute')",
@@ -230,14 +255,10 @@ market.get("/api/market", async (c) => {
   let payload;
   try {
     await c.env.DB.prepare("INSERT INTO market_calls DEFAULT VALUES").run();
-    // Structured collector index first; fall back to web snippets off-catalog.
-    payload = (await lookupPriceCharting(c.env, query).catch(() => null)) ?? (await searchSoldPrices(c.env, query));
+    payload = await fetchAndCacheMarket(c.env, query);
   } catch {
     return c.json({ error: "market lookup failed" }, 502);
   }
 
-  await c.env.DB.prepare("INSERT OR REPLACE INTO market_cache (query, payload) VALUES (?, ?)")
-    .bind(query, JSON.stringify(payload))
-    .run();
   return c.json({ ...payload, cached: false });
 });

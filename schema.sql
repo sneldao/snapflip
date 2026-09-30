@@ -165,3 +165,21 @@ CREATE TABLE IF NOT EXISTS market_cache (
 CREATE TABLE IF NOT EXISTS market_calls (
   at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
+
+-- Collector price watches (the desk's "want me to watch for one under $X?").
+-- Created pending by /watch; the t.me deep link binds tg_chat_id via /start
+-- w_<code>, which arms it. Cron re-checks the market tape and pings once when
+-- the reference price drops to max_cents, then marks it fired.
+CREATE TABLE IF NOT EXISTS market_watches (
+  id TEXT PRIMARY KEY,
+  code TEXT UNIQUE NOT NULL,             -- w_… deep-link bind code
+  query TEXT NOT NULL,                   -- normalized item name
+  display TEXT NOT NULL,                 -- item as the collector said it
+  max_cents INTEGER NOT NULL,            -- ping when market ref <= this
+  ref_cents INTEGER,                     -- market reference when armed
+  tg_chat_id TEXT,                       -- set when the collector binds Telegram
+  status TEXT NOT NULL DEFAULT 'pending',  -- pending | armed | fired | cancelled
+  fired_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+CREATE INDEX IF NOT EXISTS idx_market_watches_armed ON market_watches(status);

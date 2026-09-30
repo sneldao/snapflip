@@ -503,8 +503,31 @@ async function handleUpdate(env: Env, u: TgUpdate): Promise<void> {
   }
 
   const text = msg.text?.trim() ?? "";
-  // Buyer linking: t.me/<bot>?start=<buyerId>
-  const start = text.match(/^\/start(?:@\w+)?\s+(b_[a-z0-9]+)$/i);
+  // Linking: t.me/<bot>?start=<buyerId> for buyers, w_<code> for price watches.
+  const start = text.match(/^\/start(?:@\w+)?\s+([bw]_[a-z0-9]+)$/i);
+  if (start?.[1].startsWith("w_")) {
+    const w = await env.DB.prepare(
+      "SELECT id, display, max_cents, ref_cents FROM market_watches WHERE code = ? AND status = 'pending'",
+    ).bind(start[1]).first<{ id: string; display: string; max_cents: number; ref_cents: number | null }>();
+    if (!w) {
+      await send(env, msg.chat.id, `That watch link is spent or stale.\n▸ Ask the desk (+1 650 315 6536) for a fresh one.`);
+      return;
+    }
+    const fired = w.ref_cents != null && w.ref_cents <= w.max_cents;
+    await env.DB.prepare(
+      `UPDATE market_watches SET tg_chat_id = ?, status = '${fired ? "fired" : "armed"}'` +
+        (fired ? ", fired_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')" : "") + " WHERE id = ?",
+    ).bind(String(msg.chat.id), w.id).run();
+    await send(
+      env,
+      msg.chat.id,
+      fired
+        ? `<b>&gt; watch fired already</b>\n${esc(w.display)} is at <b>${usd(w.ref_cents!)}</b> — under your ${usd(w.max_cents)} max. A ping is a price, not a bid — a standing order is what grabs the next one.`
+        : `<b>&gt; watching</b>\n${esc(w.display)} — ping lands here when the tape hits ${usd(w.max_cents)} or less.\n\nNothing is bought on a watch. To grab the next one that surfaces:`,
+      [[{ text: "Set a standing order", url: `${env.PUBLIC_URL}/buy?sku=${encodeURIComponent(w.display)}&max=${Math.round(w.max_cents / 100)}` }]],
+    );
+    return;
+  }
   if (start) {
     const r = await env.DB.prepare("UPDATE buyers SET tg_chat_id = ? WHERE id = ?").bind(String(msg.chat.id), start[1]).run();
     await send(

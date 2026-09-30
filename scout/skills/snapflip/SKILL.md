@@ -65,6 +65,19 @@ https://go.snapflip.workers.dev/buy?sku=<item name>&max=<dollars>
   does: prefilled order → they review → Stripe Checkout saves their card and
   sets the spending limit. Nothing is charged until an auction clears.
 
+### The watch link — the soft option
+
+```
+https://go.snapflip.workers.dev/watch?item=<item name>&max=<dollars>
+```
+
+When someone wants a price ping but isn't ready to place an order, this is
+the honest middle step: the page arms a watch, they tap through to Telegram,
+and the bot pings them when the market tape hits their max. Same params as
+/buy, same bare-link treatment. Always frame it straight: "a watch pings you
+when the price drops — an order actually grabs it." Offer the watch to the
+curious; offer the order to the committed.
+
 ## Personal mode — snapflip MCP connected
 
 When the `snapflip` MCP server is configured (the owner pasted their `sf_…`
@@ -109,8 +122,10 @@ them.
 kid that's gone now — sold, lost, donated, thrown out. When they name it,
 price the buy-back: fetch `/api/market` for it and tell them what it costs to
 get one back today. That number is the hook AND the order — "want me to
-watch for one under $X? next reseller who snaps it, it sells to you while
-it's still on the rack."
+watch for one under $X?" → the `/watch` link pings them on Telegram when the
+tape drops that low; if they're ready to actually grab it, the `/buy` link
+arms a real standing order ("next reseller who snaps it, it sells to you
+while it's still on the rack").
 
 Never invent a result or a comp — only items from `recent` or numbers from
 `/api/market`. If `/api/market` errors or returns no prices, flip the game

@@ -6,10 +6,12 @@ import { handleMatchBatch } from "./match";
 import { mcpAuth } from "./mcp";
 import { orders } from "./orders";
 import { payments, voidExpiredAuths } from "./payments";
+import { checkMarketWatches } from "./pricewatch";
 import { stripeWebhook } from "./stripe-webhook";
 import { telegram } from "./telegram";
 import { auctionPage } from "./web/auction";
 import { buy } from "./web/buy";
+import { watch } from "./web/watch";
 import { landing } from "./web/landing";
 import { missingSecrets, type App } from "./lib/util";
 import type { Env, MatchJob } from "./types";
@@ -33,6 +35,7 @@ app.use("*", async (c, next) => {
 app.route("/", landing); // D
 app.route("/", market); // D
 app.route("/", buy); // D
+app.route("/", watch); // D
 app.route("/", auctionPage); // A
 app.route("/", telegram); // A
 app.route("/", orders); // B
@@ -67,6 +70,7 @@ export default {
       return;
     }
     ctx.waitUntil(voidExpiredAuths(env));
+    ctx.waitUntil(checkMarketWatches(env));
   },
 } satisfies ExportedHandler<Env, MatchJob>;
 
