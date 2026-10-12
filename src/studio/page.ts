@@ -113,6 +113,39 @@ export function studioPage(aiEnabled: boolean) {
       #boot .line.err { color: var(--red); text-transform: none; }
       #intro { top: 50%; right: 12px; transform: translateY(-50%); border-left: 3px solid var(--amber); }
       #intro .cta { margin-top: 9px; }
+      #appraisal { left: 12px; bottom: 64px; border-left: 3px solid var(--amber); }
+      #appraisal .verdict { font-family: var(--mono); font-size: 1.05rem; }
+      #appraisal.down { border-left-color: var(--red); }
+      #appraisal.up { border-left-color: var(--ok); }
+      #diag { bottom: 150px; }
+      #listing { position: fixed; inset: 0; z-index: 45; background: #e9e7e2; color: #2a2a2a;
+                 display: flex; align-items: center; justify-content: center; padding: 16px;
+                 font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+                 transition: opacity 0.8s ease, transform 0.8s ease; }
+      #listing.lift { opacity: 0; transform: scale(0.94) translateY(-20px); pointer-events: none; }
+      #listing .sheet { width: min(92vw, 640px); background: #fff; border: 1px solid #d8d5cf; border-radius: 4px;
+                        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.14); padding: 18px 20px; }
+      #listing .site { font-size: 10px; letter-spacing: 0.22em; text-transform: uppercase; color: #9a958c; margin-bottom: 14px; }
+      #listing .rowx { display: flex; gap: 16px; }
+      #listing .photo { width: 170px; min-width: 170px; height: 170px; border: 1px solid #ddd;
+                        background: repeating-linear-gradient(45deg, #ededeb, #ededeb 9px, #f6f6f4 9px, #f6f6f4 18px);
+                        display: flex; align-items: center; justify-content: center; text-align: center;
+                        color: #a9a49a; font-size: 10px; line-height: 1.6; letter-spacing: 0.12em; text-transform: uppercase; }
+      #listing h2 { margin: 0 0 4px; font-size: 17px; font-weight: 600; color: #222; }
+      #listing .cond { font-size: 12px; color: #555; }
+      #listing .cond b { color: #1a7a33; }
+      #listing .price { font-size: 20px; font-weight: 700; color: #222; margin: 8px 0 2px; }
+      #listing .seller { font-size: 11px; color: #9a958c; margin-top: 8px; line-height: 1.6; }
+      #listing .prompt-line { margin-top: 16px; border-top: 1px dashed #ddd; padding-top: 14px; }
+      #listing .prompt-text { font-family: "SF Mono", ui-monospace, Menlo, monospace; font-size: 11.5px; line-height: 1.6;
+                              background: #f6f3ea; border: 1px solid #e2dbc6; border-radius: 3px; color: #6b5a2e;
+                              padding: 9px 11px; min-height: 34px; }
+      #listing .actions { margin-top: 10px; display: flex; align-items: center; gap: 10px; }
+      #listing .go { background: #141114; color: #f5c987; border: 0; padding: 9px 18px; font-size: 11px;
+                     letter-spacing: 0.12em; text-transform: uppercase; cursor: pointer; border-radius: 3px; font-family: inherit; }
+      #listing .skip { background: none; border: 0; padding: 0; font-size: 11px; color: #9a958c;
+                       text-decoration: underline; cursor: pointer; font-family: inherit; }
+      #listing .fineprint { font-size: 10px; color: #b3aea4; margin-top: 12px; line-height: 1.6; }
       @media (max-width: 860px) {
         .badge { font-size: 0.54rem; white-space: normal; overflow-wrap: anywhere; text-align: center; }
         .topbar { max-width: calc(100vw - 24px); padding: 8px 12px; }
@@ -120,6 +153,9 @@ export function studioPage(aiEnabled: boolean) {
         #decision { top: auto; bottom: 122px; right: 12px; left: 12px; max-width: none; }
         #evidence-card { top: auto; bottom: 122px; right: 12px; left: 12px; max-width: none; transform: none; }
         #intro { top: auto; bottom: 122px; right: 12px; left: 12px; max-width: none; transform: none; }
+        #appraisal { bottom: 122px; }
+        #listing .rowx { flex-direction: column; }
+        #listing .photo { width: 100%; height: 110px; min-width: 0; }
         .nav { bottom: 10px; padding: 6px 8px; gap: 6px; }
         .nav button { padding: 7px 11px; }
         .drawer { bottom: 60px; }
@@ -170,6 +206,35 @@ export function studioPage(aiEnabled: boolean) {
       <div class="verdict">A worn cartridge, tagged and waiting.</div>
       <div class="why">Take it to the inspection table to check its evidence — then watch a simulated collector decide, and walk if the rules say so.</div>
       <div class="cta"><button type="button" class="btn primary" id="intro-go">Take it to inspection</button></div>
+    </div>
+
+    <div class="card" id="appraisal" hidden>
+      <div class="who">simulated appraisal &middot; unverified</div>
+      <div class="verdict" id="cap-val">$0.00</div>
+      <div class="why" id="cap-note">scenario appraisal &mdash; collector&rsquo;s ceiling</div>
+    </div>
+
+    <div id="listing" hidden>
+      <div class="sheet">
+        <div class="site">generic marketplace &middot; this is a listing today</div>
+        <div class="rowx">
+          <div class="photo">seller photo<br />unverified</div>
+          <div>
+            <h2>Pok&eacute;mon Yellow &mdash; Game Boy cartridge</h2>
+            <div class="cond">Condition: <b id="listing-claim">Mint</b> &mdash; seller&rsquo;s word</div>
+            <div class="price">$48.00</div>
+            <div class="seller">seller: rack_rat_88 &middot; 1 photo &middot; no returns &middot; ships in 3 days</div>
+          </div>
+        </div>
+        <div class="prompt-line">
+          <div class="prompt-text" id="listing-prompt"></div>
+          <div class="actions">
+            <button type="button" class="go" id="listing-go">Enter the world</button>
+            <button type="button" class="skip" id="listing-skip">skip intro</button>
+          </div>
+          <div class="fineprint">SnapFlip Studio &middot; staged sample listing &middot; no real item, sale, or photos</div>
+        </div>
+      </div>
     </div>
 
     <div id="diag" hidden></div>

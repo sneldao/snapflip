@@ -791,7 +791,8 @@ export function buildChamber(): ChapterBuild {
     bulb.position.set(bx, 3.28, 0);
     g.add(bulb);
   }
-  const warm = new THREE.PointLight(palette.amber, 10, 10);
+  const WARM_BASE = 10;
+  const warm = new THREE.PointLight(palette.amber, WARM_BASE, 10);
   warm.position.set(0, 3.1, 0.5);
   g.add(warm);
 
@@ -850,6 +851,9 @@ export function buildChamber(): ChapterBuild {
   const GAVEL_UP = 0.55;
   const GAVEL_DROP = 0.7;
   const INTRO_MS = BID_STEP_MS * podNames.length + INTRO_TAIL_MS;
+  // Verdict beats: arc lights first, then the basis card lands after the gavel.
+  const ARC_DELAY_MS = 500;
+  const RATIONALE_DELAY_MS = 1500;
 
   let signalOn = false;
   let introActive = false;
@@ -1024,10 +1028,16 @@ export function buildChamber(): ChapterBuild {
         const show = arcAnchor !== null && introEndAt >= 0;
         arcMesh.visible = show;
         if (show) {
-          arcMat.opacity = ARC_OPACITY * (introReduced ? 1 : Math.min(1, Math.max(0, (nowMs - introEndAt) / ARC_FADE_MS)));
+          arcMat.opacity = ARC_OPACITY * (introReduced ? 1 : Math.min(1, Math.max(0, (nowMs - introEndAt - ARC_DELAY_MS) / ARC_FADE_MS)));
         }
       }
-      rationaleMat.opacity = rationaleText && !signalOn && introEndAt >= 0 ? Math.min(1, (nowMs - introEndAt) / 900) : 0;
+      rationaleMat.opacity =
+        rationaleText && !signalOn && introEndAt >= 0
+          ? Math.min(1, Math.max(0, (nowMs - introEndAt - RATIONALE_DELAY_MS) / 900))
+          : 0;
+      // The room itself reacts: dropout dims the house lights toward the pods.
+      const warmTarget = introEndAt >= 0 && !signalOn ? WARM_BASE * 0.42 : WARM_BASE;
+      warm.intensity += (warmTarget - warm.intensity) * 0.04;
       const arcOn = arcMesh?.visible === true;
       beads.forEach((b, i) => {
         b.visible = arcOn;

@@ -26,5 +26,7 @@ deleted). Check `npx wrangler whoami` before deploying.
   `check:studio` instead.
 - Deep-link params: `?ch=`, `?splat=`, `?credit=`, `?env=`, `?demo=1`
   (`&loop=0` to hold), `?fx=0` (no post), `?gl2=1` (WebGL2 backend),
-  `?gpu=0` (legacy WebGLRenderer), `?debug` (diagnostics incl. backend).
+  `?gpu=0` (legacy WebGLRenderer), `?debug` (diagnostics incl. backend),
+  `?fast=1` (skip listing cold-open), `?cond=` + `?rule=1` + `?claim=`
+  (director's mode — plant hidden condition vs the seller's claim).
 - Full architecture/strategy notes: `docs/AI_BUILDER_2026_3D_NOTES.md`.

@@ -6,7 +6,7 @@ import {
   type StudioSpec,
 } from "./scene";
 import { createAudio } from "./audio";
-import { CHAPTERS } from "./world/chapters";
+import { CHAPTERS, RAKING_THETA } from "./world/chapters";
 import { WorldController } from "./world/WorldController";
 
 const CONDS_BY_OBJECT: Record<StudioSpec["object"], StudioCondition[]> = {
@@ -67,11 +67,58 @@ const bootEl = el<HTMLDivElement>("boot");
 const bootLine = el<HTMLDivElement>("boot-line");
 const bootBar = el<HTMLSpanElement>("boot-bar");
 const introEl = el<HTMLDivElement>("intro");
+const listingEl = el<HTMLDivElement>("listing");
+const listingPromptEl = el<HTMLDivElement>("listing-prompt");
+const appraisalEl = el<HTMLDivElement>("appraisal");
+const capValEl = el<HTMLDivElement>("cap-val");
 const did = { rotate: false, lamp: false, nav: false, click: false };
 let introDone = params.get("demo") === "1" || chDeepLink();
+let evidenceUnlocked = params.get("ev") !== null;
 
 function chDeepLink() {
   return params.get("ch") !== null;
+}
+
+// Director's mode: the judge plants the hidden condition via ?cond=; the
+// seller's claim stays on the listing overlay. Dramatic irony as a URL param.
+const condParam = params.get("cond");
+if (condParam && (CONDS_BY_OBJECT[spec.object] as readonly string[]).includes(condParam)) {
+  condition = condParam as StudioCondition;
+}
+const claimParam = params.get("claim");
+if (claimParam) el<HTMLElement>("listing-claim").textContent = claimParam;
+if (params.get("rule") === "1") spec = { ...spec, rejectTorn: true, rejectChip: true };
+
+// Cold open: a flat marketplace listing is the first paint — "this is a
+// listing today" — then it lifts and the world is already built beneath.
+const LISTING_PROMPT = "turn this listing into a world — inspect it, test the claim, let a buyer decide";
+let listingDone = params.get("fast") === "1" || chDeepLink();
+let listingTypeTimer = 0;
+function typeListing() {
+  if (reducedMotion) {
+    listingPromptEl.textContent = LISTING_PROMPT;
+    return;
+  }
+  let i = 0;
+  listingTypeTimer = window.setInterval(() => {
+    i++;
+    listingPromptEl.textContent = LISTING_PROMPT.slice(0, i);
+    if (i >= LISTING_PROMPT.length) clearInterval(listingTypeTimer);
+  }, 26);
+}
+function enterWorld() {
+  if (listingDone) return;
+  listingDone = true;
+  clearInterval(listingTypeTimer);
+  listingEl.classList.add("lift");
+  setTimeout(() => listingEl.remove(), reducedMotion ? 0 : 900);
+  syncIntro();
+}
+el<HTMLButtonElement>("listing-go").addEventListener("click", enterWorld);
+el<HTMLButtonElement>("listing-skip").addEventListener("click", enterWorld);
+if (!listingDone) {
+  listingEl.hidden = false;
+  if (params.get("demo") !== "1") listingPromptEl.textContent = LISTING_PROMPT;
 }
 
 function bootStep(pct: number, msg: string, err = false) {
@@ -86,7 +133,38 @@ function bootDone() {
 bootStep(25, "waking the renderer");
 
 function syncIntro() {
-  introEl.hidden = introDone || CHAPTERS[chapter] !== "discover" || drawer.classList.contains("open");
+  introEl.hidden = introDone || !listingDone || CHAPTERS[chapter] !== "discover" || drawer.classList.contains("open");
+}
+
+// The ticker: a condition-discounted appraisal animates as the scenario
+// moves — stakes made visible, and the number falling is the story.
+const COND_FACTOR: Record<StudioCondition, number> = { clean: 1, worn: 0.82, torn: 0.45, chipped: 0.5 };
+function appraisalCents() {
+  return Math.round(spec.maxCents * COND_FACTOR[condition]);
+}
+let capShown = -1;
+function setAppraisal(cents: number, eligible: boolean) {
+  el<HTMLDivElement>("cap-note").textContent = eligible
+    ? "scenario appraisal — collector's ceiling"
+    : "scenario appraisal — collector walks";
+  if (cents === capShown) return;
+  if (capShown < 0 || reducedMotion) {
+    capShown = cents;
+    capValEl.textContent = `$${(cents / 100).toFixed(2)}`;
+    return;
+  }
+  const from = capShown;
+  capShown = cents;
+  appraisalEl.classList.toggle("down", cents < from);
+  appraisalEl.classList.toggle("up", cents > from);
+  const t0 = performance.now();
+  const tick = () => {
+    const p = Math.min(1, (performance.now() - t0) / 650);
+    const v = from + (cents - from) * (p * p * (3 - 2 * p));
+    capValEl.textContent = `$${(v / 100).toFixed(2)}`;
+    if (p < 1) requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
 }
 el<HTMLButtonElement>("intro-go").addEventListener("click", () => {
   introDone = true;
@@ -139,7 +217,10 @@ for (let i = 0; i < 2; i++) {
   markersEl.appendChild(b);
   markerBtns.push(b);
 }
-world?.setMarkers(markerBtns.map((el) => ({ el })));
+function markerBindings() {
+  return markerBtns.map((el, i) => ({ el, gated: i > 0 && !evidenceUnlocked }));
+}
+world?.setMarkers(markerBindings());
 if (world) {
   world.onLampSettled = (side) => {
     if (side !== spec.lightSide) {
@@ -181,6 +262,10 @@ function objectLabel() {
 
 function selectMarker(i: number) {
   selectedMarker = i;
+  if (!evidenceUnlocked) {
+    evidenceUnlocked = true;
+    world?.unlockEvidence();
+  }
   audio.click();
   world?.setEvidenceFocus(i);
   evTitle.textContent = markerBtns[i].querySelector("span:last-child")?.textContent ?? "evidence";
@@ -194,6 +279,7 @@ function refreshDecision() {
   verdictEl.className = `verdict ${d.eligible ? "in" : "out"}`;
   whyEl.textContent = d.reason;
   priceEl.textContent = `cap $${(d.limitCents / 100).toFixed(2)} · simulated decision`;
+  setAppraisal(appraisalCents(), d.eligible);
   tlScene.textContent = spec.title;
   tlCond.textContent = condition;
   tlAgent.textContent = d.eligible ? "in" : "out";
@@ -216,7 +302,7 @@ function restore(specIn: StudioSpec, condIn: StudioCondition) {
   condition = condIn;
   syncChips();
   world?.applySpec(spec, condition);
-  world?.setMarkers(markerBtns.map((el) => ({ el })));
+  world?.setMarkers(markerBindings());
   if (selectedMarker >= 0) selectMarker(selectedMarker);
   refreshDecision();
 }
@@ -257,6 +343,7 @@ function setChapter(i: number) {
     b.setAttribute("aria-pressed", String(Number(b.dataset.ch) === i));
   });
   decisionCard.hidden = CHAPTERS[i] !== "auction";
+  appraisalEl.hidden = CHAPTERS[i] === "discover";
   if (CHAPTERS[i] !== "inspect") {
     evCard.hidden = true;
     selectedMarker = -1;
@@ -483,9 +570,9 @@ if (world) {
   setTimeout(bootDone, 350);
 }
 
-// ?demo=1 — scripted showcase for the video reel: Rack → Atelier (auto-spin +
-// evidence select) → Chamber (pods + gavel) → hold → loop. ?demo=1&loop=0
-// holds on the verdict instead of restarting.
+// ?demo=1 — scripted showcase in three acts: the claim (listing lifts) → the
+// scrutiny (raking light, spin, pinned evidence, the planted condition) → the
+// verdict (pods pop, gavel falls, basis card, arc). &loop=0 holds the verdict.
 function spinItem(speed: number, ms: number) {
   const t0 = performance.now();
   const tick = () => {
@@ -494,24 +581,37 @@ function spinItem(speed: number, ms: number) {
   };
   requestAnimationFrame(tick);
 }
-function demoRun() {
+function demoBeats() {
   const steps: [number, () => void][] = [
-    [1400, () => setChapter(1)],
-    [4500, () => spinItem(0.5, 1800)],
-    [5200, () => selectMarker(0)],
-    [8200, () => setChapter(2)],
+    [400, () => setChapter(1)],
+    [2600, () => world?.nudgeLamp(RAKING_THETA.left, 1500)],
+    [4300, () => spinItem(0.5, 1800)],
+    [6400, () => selectMarker(0)],
+    [8000, () => document.querySelector<HTMLButtonElement>('[data-cond="torn"]')?.click()],
+    [9200, () => {
+      if (ruleBtn.getAttribute("aria-pressed") !== "true") ruleBtn.click();
+    }],
+    [10800, () => setChapter(2)],
     [
-      19000,
+      24000,
       () => {
         if (params.get("loop") === "0") return;
         setChapter(0);
-        setTimeout(demoRun, 4200);
+        setTimeout(demoBeats, 4200);
       },
     ],
   ];
   for (const [dt, fn] of steps) setTimeout(fn, dt);
 }
-if (params.get("demo") === "1" && world) setTimeout(demoRun, 600);
+if (params.get("demo") === "1" && world) {
+  if (!listingDone) {
+    typeListing();
+    setTimeout(enterWorld, 3400);
+    setTimeout(demoBeats, 5600);
+  } else {
+    setTimeout(demoBeats, 1200);
+  }
+}
 
 if (params.has("debug") && world) {
   const diag = el<HTMLDivElement>("diag");

@@ -14,7 +14,10 @@ export interface MarkerBinding {
   el: HTMLElement;
   anchor: THREE.Vector3;
   label: string;
+  gated?: boolean;
 }
+
+const KEY_INTENSITY = 70;
 
 export class WorldController {
   private renderer: StudioRenderer;
@@ -62,6 +65,10 @@ export class WorldController {
   private parallax = new THREE.Vector2();
   private parallaxTarget = new THREE.Vector2();
   private headWorld = new THREE.Vector3();
+  private keyGain = 1;
+  private keyGainTarget = 1;
+  private lampRevealArmed = false;
+  private lampHasRevealed = false;
 
   onLampSettled?: (side: "left" | "right") => void;
   onDrag?: (kind: "lamp" | "item") => void;
@@ -164,7 +171,7 @@ export class WorldController {
       this.onGavel?.();
     };
 
-    const key = new THREE.SpotLight(0xffc27a, 70, 0, Math.PI / 6, 0.45, 1.7);
+    const key = new THREE.SpotLight(0xffc27a, KEY_INTENSITY, 0, Math.PI / 6, 0.45, 1.7);
     key.castShadow = true;
     key.shadow.mapSize.set(1024, 1024);
     key.shadow.bias = -0.0003;
@@ -254,6 +261,7 @@ export class WorldController {
       this.onDrag?.(this.dragMode);
     }
     if (this.dragMode === "lamp") {
+      this.revealLamp();
       this.raycaster.setFromCamera(this.ndc, this.camera);
       if (this.raycaster.ray.intersectPlane(this.floorPlane, this.floorHit)) {
         let theta = Math.atan2(this.floorHit.z - this.lampFocus.z, this.floorHit.x - this.lampFocus.x);
@@ -386,19 +394,47 @@ export class WorldController {
     this.currentChapter = idx;
     this.controls.enabled = false;
     if (CHAPTERS[idx] === "auction") this.chapterBuilds.auction.playIntro?.(nowMs, this.reducedMotion);
+    if (CHAPTERS[idx] === "inspect") this.armLampReveal();
+  }
+
+  // First Atelier visit: the item sits in low light — dragging the lamp is
+  // literally the reveal. Once revealed the room stays lit on later visits.
+  private armLampReveal() {
+    if (this.reducedMotion || this.lampHasRevealed || this.lampRevealArmed) return;
+    this.lampRevealArmed = true;
+    this.keyGain = 0.34;
+    this.keyGainTarget = 0.34;
+  }
+
+  revealLamp() {
+    this.lampHasRevealed = true;
+    this.keyGainTarget = 1;
+  }
+
+  // Scripted lamp sweep for the demo autopilot — counts as a reveal.
+  nudgeLamp(theta: number, dur = 900) {
+    const delta = Math.atan2(Math.sin(theta - this.lampTheta), Math.cos(theta - this.lampTheta));
+    this.lampTween = { from: this.lampTheta, delta, t0: performance.now(), dur };
+    this.revealLamp();
+    this.onDrag?.("lamp");
   }
 
   chapter() {
     return CHAPTERS[this.currentChapter];
   }
 
-  setMarkers(bindings: { el: HTMLElement }[]) {
+  setMarkers(bindings: { el: HTMLElement; gated?: boolean }[]) {
     this.markers = bindings.map((b, i) => {
       const label = this.item.anchorLabels[i] ?? "";
       const labelEl = b.el.querySelector("span:last-child");
       if (labelEl) labelEl.textContent = label;
-      return { el: b.el, anchor: this.item.anchors[i] ?? new THREE.Vector3(), label };
+      return { el: b.el, anchor: this.item.anchors[i] ?? new THREE.Vector3(), label, gated: b.gated ?? false };
     });
+  }
+
+  // Fog-of-war lift: first evidence interaction reveals the full marker layer.
+  unlockEvidence() {
+    for (const mk of this.markers) mk.gated = false;
   }
 
   applySpec(spec: StudioSpec, condition: StudioCondition) {
@@ -475,8 +511,15 @@ export class WorldController {
     });
     this.item.group.add(splat);
     this.splat = splat;
+    if (!this.reducedMotion) {
+      const target = splat.scale.x;
+      splat.scale.setScalar(0.001);
+      this.splatPop = { t0: performance.now(), target };
+    }
     return true;
   }
+
+  private splatPop: { t0: number; target: number } | null = null;
 
   private envSplat: THREE.Mesh | null = null;
 
@@ -633,6 +676,21 @@ export class WorldController {
         this.splat.rotation.y = this.splatYaw.from + (this.splatYaw.to - this.splatYaw.from) * k;
       }
     }
+    if (this.splatPop && this.splat) {
+      const p = Math.min(1, (now - this.splatPop.t0) / 700);
+      if (p >= 1) {
+        this.splat.scale.setScalar(this.splatPop.target);
+        this.splatPop = null;
+      } else {
+        const k = 1 + 2.7 * Math.pow(p - 1, 3) + 1.7 * Math.pow(p - 1, 2);
+        this.splat.scale.setScalar(Math.max(0.001, this.splatPop.target * k));
+      }
+    }
+    if (this.keyGain !== this.keyGainTarget) {
+      this.keyGain += (this.keyGainTarget - this.keyGain) * 0.055;
+      if (Math.abs(this.keyGainTarget - this.keyGain) < 0.01) this.keyGain = this.keyGainTarget;
+      this.key.intensity = KEY_INTENSITY * this.keyGain;
+    }
     this.chapterBuilds.auction.update?.(now);
     this.chapterBuilds.inspect.update?.(now);
     this.updateEvidenceArc();
@@ -669,7 +727,7 @@ export class WorldController {
     const h = this.container.clientHeight;
     const camDir = new THREE.Vector3();
     for (const mk of this.markers) {
-      if (!show) {
+      if (!show || mk.gated) {
         mk.el.style.display = "none";
         continue;
       }
