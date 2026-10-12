@@ -3,6 +3,7 @@ import { claudeJson, llmAvailable } from "../lib/claude";
 import { devOnly, isDev, type App } from "../lib/util";
 import { studioPage } from "./page";
 import { parsePreviewBody, validateSpec } from "./scene";
+import { parseStudioEvent } from "./events";
 
 const STUDIO_SYSTEM = `You configure a fictional 3D inspection scene for SnapFlip Studio. Translate the user's instruction into a bounded scene and simulation rule data, not facts about a real object. Return a single JSON object with exactly these keys: "title" (short string), "object" ("cartridge" or "generic"), "stage" ("archive" or "auction"), "shellColor" ("oxblood" or "charcoal" or "stone"), "lightSide" ("left" or "right"), "condition" ("clean" or "worn" or "torn" or "chipped"), "rejectTorn" (boolean), "rejectChip" (boolean), "maxCents" (integer 100 through 100000), "evidenceLabel" (short string). If a previous scene JSON is provided, keep unspecified fields and change only values requested by the latest instruction. Unsupported objects use generic. For a chip use condition "chipped" and rejectChip. The condition is a described scenario, never an observed fact; never assert authenticity. Do not return code, markup, or other keys.`;
 
@@ -78,6 +79,21 @@ studio.post("/api/studio/preview", devOnly, async (c) => {
   const spec = validateSpec(out);
   if (!spec) return c.json({ error: "model returned an invalid scene spec" }, 502);
   return c.json({ spec });
+});
+
+// Public on purpose: production engagement is the point. Writes are anonymous
+// and validated; a missing dataset binding drops the event silently.
+studio.post("/api/studio/event", async (c) => {
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "invalid JSON body" }, 400);
+  }
+  const parsed = parseStudioEvent(body);
+  if (!parsed.ok) return c.json({ error: parsed.error }, 400);
+  c.env.STUDIO_EVENTS?.writeDataPoint({ blobs: [parsed.name, parsed.chapter], doubles: [1], indexes: [parsed.name] });
+  return c.json({ ok: true }, 202);
 });
 
 studio.get("/studio", (c) => c.html(studioPage(isDev(c.env))));

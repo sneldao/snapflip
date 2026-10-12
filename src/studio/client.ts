@@ -245,6 +245,7 @@ if (world) {
       did.lamp = true;
       if (!revealPlayed && state.condition !== "clean") {
         revealPlayed = true;
+        track("reveal_damage");
         world?.pulse();
         audio.tick(0);
         setTimeout(() => {
@@ -295,6 +296,16 @@ function haptic(ms: number) {
   if ("vibrate" in navigator) navigator.vibrate(ms);
 }
 
+// Anonymous engagement ping. Analytics must never break the UI, so failures are ignored.
+function track(name: string) {
+  fetch("/api/studio/event", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name, chapter: CHAPTERS[state.chapter] }),
+    keepalive: true,
+  }).catch(() => undefined);
+}
+
 function apply(next: Snapshot, mode: "spec" | "condition" | "ui") {
   state.spec = next.spec;
   state.condition = next.condition;
@@ -313,6 +324,7 @@ function selectMarker(i: number) {
     world?.unlockEvidence();
   }
   audio.click();
+  track("evidence_open");
   world?.setEvidenceFocus(i);
   render();
 }
@@ -330,6 +342,7 @@ function goChapter(i: number) {
     if (CHAPTERS[i] === "inspect") {
       setTimeout(() => beat("The light doesn't lie."), reducedMotion ? 0 : 800);
     } else if (CHAPTERS[i] === "auction") {
+      track("chamber_reached");
       setTimeout(() => beat("Now the collector decides."), reducedMotion ? 0 : 800);
       setTimeout(() => {
         const d = evaluateDecision(state.spec, state.condition);
@@ -647,6 +660,7 @@ el<HTMLButtonElement>("btn-share").addEventListener("click", async () => {
   url.searchParams.set("ch", CHAPTERS[state.chapter]);
   try {
     await navigator.clipboard.writeText(url.toString());
+    track("link_copied");
     showToast("link copied", false);
   } catch {
     history.replaceState(null, "", url.toString());

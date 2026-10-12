@@ -18,6 +18,8 @@
   ],
   // `wrangler r2 bucket create snapflip-photos`
   "r2_buckets": [{ "binding": "PHOTOS", "bucket_name": "snapflip-photos" }],
+  // Anonymous studio engagement events (src/studio/events.ts). Optional in dev.
+  "analytics_engine_datasets": [{ "binding": "STUDIO_EVENTS", "dataset": "snapflip_studio" }],
   // `wrangler queues create snapflip-match`
   "queues": {
     "producers": [{ "binding": "MATCH_QUEUE", "queue": "snapflip-match" }],

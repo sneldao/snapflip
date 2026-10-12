@@ -6,6 +6,7 @@ import { devOnly, type App } from "../src/lib/util.ts";
 import { studioPage } from "../src/studio/page.ts";
 import { ChapterNav, easeInOutCubic } from "../src/studio/world/nav.ts";
 import { clampLampTheta, focusCard, hintFor, lampSide, wrapAngle } from "../src/studio/ux.ts";
+import { parseStudioEvent } from "../src/studio/events.ts";
 import type { Env } from "../src/types.ts";
 
 const valid = (): StudioSpec => ({ ...SAMPLE_SPEC });
@@ -214,6 +215,18 @@ describe("shareable scene links", () => {
     assert.equal(decodeScene(JSON.stringify({ spec: valid(), condition: "mint" })), null);
     assert.equal(decodeScene(JSON.stringify({ spec: valid(), condition: "chipped" })), null);
     assert.equal(decodeScene(JSON.stringify({ spec: { bogus: 1 }, condition: "worn" })), null);
+  });
+});
+
+describe("parseStudioEvent", () => {
+  it("accepts known events and keeps only known chapters", () => {
+    assert.deepEqual(parseStudioEvent({ name: "reveal_damage", chapter: "inspect" }), { ok: true, name: "reveal_damage", chapter: "inspect" });
+    assert.deepEqual(parseStudioEvent({ name: "link_copied", chapter: "bogus" }), { ok: true, name: "link_copied", chapter: "none" });
+  });
+  it("rejects unknown or malformed events", () => {
+    assert.equal(parseStudioEvent({ name: "anything" }).ok, false);
+    assert.equal(parseStudioEvent(null).ok, false);
+    assert.equal(parseStudioEvent([]).ok, false);
   });
 });
 

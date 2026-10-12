@@ -222,8 +222,8 @@ export function studioPage(aiEnabled: boolean) {
 
     <div class="card" id="intro" hidden>
       <div class="who">lot 07 &middot; found in the racks</div>
-      <div class="verdict">A worn cartridge, tagged and waiting.</div>
-      <div class="why">Take it to the inspection table to check its evidence — then watch a simulated collector decide, and walk if the rules say so.</div>
+      <div class="verdict">The seller says it's mint.</div>
+      <div class="why">Put it under the light and check the label. Then watch a simulated buyer decide whether that claim survives.</div>
       <div class="cta"><button type="button" class="btn primary" id="intro-go">Take it to inspection</button></div>
     </div>
 

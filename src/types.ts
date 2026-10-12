@@ -11,6 +11,8 @@ export interface Env {
   AUCTION: DurableObjectNamespace<AuctionDO>;
   BUYER: DurableObjectNamespace<BuyerAgent>;
   MCP_OBJECT: DurableObjectNamespace<SnapflipMCP>;
+  /** Anonymous studio engagement events. Absent = events are dropped. */
+  STUDIO_EVENTS?: AnalyticsEngineDataset;
 
   ENVIRONMENT: string; // "dev" enables /dev/* routes and stub fallbacks
   PUBLIC_URL: string;
