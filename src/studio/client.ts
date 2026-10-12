@@ -1,5 +1,7 @@
 import {
   SAMPLE_SPEC,
+  decodeScene,
+  encodeScene,
   evaluateDecision,
   validateSpec,
   type StudioCondition,
@@ -73,6 +75,9 @@ const listingPromptEl = el<HTMLDivElement>("listing-prompt");
 const beatEl = el<HTMLDivElement>("beat");
 const diagEl = el<HTMLDivElement>("diag");
 const markerBtns: HTMLButtonElement[] = [];
+const toastEl = el<HTMLDivElement>("toast");
+const toastText = el<HTMLSpanElement>("toast-text");
+const toastUndo = el<HTMLButtonElement>("toast-undo");
 
 const params = new URLSearchParams(location.search);
 const audio = createAudio();
@@ -104,6 +109,13 @@ if (condParam && (CONDS_BY_OBJECT[state.spec.object] as readonly string[]).inclu
 const claimParam = params.get("claim");
 if (claimParam) el<HTMLElement>("listing-claim").textContent = claimParam;
 if (params.get("rule") === "1") state.spec = { ...state.spec, rejectTorn: true, rejectChip: true };
+
+// A shared link (?scene=) restores the exact scene; anything invalid is ignored.
+const shared = decodeScene(params.get("scene"));
+if (shared) {
+  state.spec = shared.spec;
+  state.condition = shared.condition;
+}
 
 // ---------- narrator, listing, boot ----------
 
@@ -211,20 +223,35 @@ world?.setMarkers(markerBindings());
 if (world) {
   world.onLampSettled = (side) => {
     if (side !== state.spec.lightSide) {
-      commit({ spec: { ...state.spec, lightSide: side }, condition: state.condition }, "ui");
+      haptic(10);
+      commit({ spec: { ...state.spec, lightSide: side }, condition: state.condition }, "ui", "moved the light");
     }
   };
   world.onEvidencePinned = () => {
     did.click = true;
+    haptic(12);
     selectMarker(0);
   };
   world.onPlateAlign = () => {
     did.click = true;
     render();
   };
+  // The first reveal of damage gets a camera kick and opens the evidence card.
+  let revealPlayed = false;
   world.onDrag = (kind) => {
-    if (kind === "item") did.rotate = true;
-    else did.lamp = true;
+    if (kind === "item") {
+      did.rotate = true;
+    } else {
+      did.lamp = true;
+      if (!revealPlayed && state.condition !== "clean") {
+        revealPlayed = true;
+        world?.pulse();
+        audio.tick(0);
+        setTimeout(() => {
+          if (CHAPTERS[state.chapter] === "inspect") selectMarker(0);
+        }, 450);
+      }
+    }
     render();
   };
   world.onGavel = () => audio.gavel();
@@ -244,13 +271,28 @@ soundBtn.addEventListener("click", () => {
 
 // Every state change goes through here: push undo (if asked), apply to the
 // world when the spec or condition changed, then re-render the UI.
-function commit(next: Snapshot, mode: "spec" | "condition" | "ui", pushUndo = true) {
-  if (pushUndo) {
-    undoStack.push({ spec: state.spec, condition: state.condition });
-    undoBtn.disabled = false;
-  }
+function commit(next: Snapshot, mode: "spec" | "condition" | "ui", label: string) {
+  undoStack.push({ spec: state.spec, condition: state.condition });
+  undoBtn.disabled = false;
   apply(next, mode);
   render();
+  showToast(label, true);
+}
+
+let toastTimer = 0;
+function showToast(text: string, undoable: boolean) {
+  toastText.textContent = text;
+  toastUndo.hidden = !undoable || undoStack.length === 0;
+  toastEl.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = window.setTimeout(() => {
+    toastEl.hidden = true;
+  }, 4000);
+}
+
+// Light haptic confirmation where the device supports it.
+function haptic(ms: number) {
+  if ("vibrate" in navigator) navigator.vibrate(ms);
 }
 
 function apply(next: Snapshot, mode: "spec" | "condition" | "ui") {
@@ -500,12 +542,16 @@ el<HTMLButtonElement>("btn-scenario").addEventListener("click", () => toggleDraw
 
 document.querySelectorAll<HTMLButtonElement>("[data-cond]").forEach((b) => {
   b.addEventListener("click", () => {
-    commit({ spec: state.spec, condition: b.dataset.cond as StudioCondition }, "condition");
+    commit({ spec: state.spec, condition: b.dataset.cond as StudioCondition }, "condition", `condition ${b.dataset.cond}`);
   });
 });
 document.querySelectorAll<HTMLButtonElement>("[data-light]").forEach((b) => {
   b.addEventListener("click", () => {
-    commit({ spec: { ...state.spec, lightSide: b.dataset.light as StudioSpec["lightSide"] }, condition: state.condition }, "spec");
+    commit(
+      { spec: { ...state.spec, lightSide: b.dataset.light as StudioSpec["lightSide"] }, condition: state.condition },
+      "spec",
+      `light ${b.dataset.light}`,
+    );
   });
 });
 
@@ -514,7 +560,7 @@ ruleBtn.addEventListener("click", () => {
     state.spec.object === "cartridge"
       ? { ...state.spec, rejectTorn: !state.spec.rejectTorn }
       : { ...state.spec, rejectChip: !state.spec.rejectChip };
-  commit({ spec, condition: state.condition }, "ui");
+  commit({ spec, condition: state.condition }, "ui", "rule changed");
 });
 
 function renderPhotos() {
@@ -578,15 +624,41 @@ if (photoInput && photoClear && photoList) {
 
 el<HTMLButtonElement>("load-sample").addEventListener("click", () => {
   errEl.hidden = true;
-  commit({ spec: { ...SAMPLE_SPEC }, condition: SAMPLE_SPEC.condition }, "spec");
+  commit({ spec: { ...SAMPLE_SPEC }, condition: SAMPLE_SPEC.condition }, "spec", "loaded sample");
 });
 
-undoBtn.addEventListener("click", () => {
+function undo() {
   const prev = undoStack.pop();
   if (!prev) return;
   apply(prev, "spec");
   undoBtn.disabled = undoStack.length === 0;
   render();
+}
+
+undoBtn.addEventListener("click", undo);
+toastUndo.addEventListener("click", () => {
+  undo();
+  toastEl.hidden = true;
+});
+
+el<HTMLButtonElement>("btn-share").addEventListener("click", async () => {
+  const url = new URL(location.href);
+  url.searchParams.set("scene", encodeScene(state.spec, state.condition));
+  url.searchParams.set("ch", CHAPTERS[state.chapter]);
+  try {
+    await navigator.clipboard.writeText(url.toString());
+    showToast("link copied", false);
+  } catch {
+    history.replaceState(null, "", url.toString());
+    showToast("copy blocked — link is in the address bar", false);
+  }
+});
+
+document.querySelectorAll<HTMLButtonElement>("[data-suggest]").forEach((b) => {
+  b.addEventListener("click", () => {
+    promptEl.value = b.dataset.suggest ?? "";
+    el<HTMLFormElement>("director-form").requestSubmit();
+  });
 });
 
 el<HTMLFormElement>("director-form").addEventListener("submit", async (e) => {
@@ -613,7 +685,7 @@ el<HTMLFormElement>("director-form").addEventListener("submit", async (e) => {
       showError("Model returned an unusable scene spec; the current scene is unchanged.");
       return;
     }
-    commit({ spec: next, condition: next.condition }, "spec");
+    commit({ spec: next, condition: next.condition }, "spec", "new scene");
   } catch {
     showError("Network error reaching the scene model; the current scene is unchanged.");
   } finally {

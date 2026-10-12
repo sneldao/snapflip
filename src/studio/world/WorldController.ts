@@ -459,6 +459,11 @@ export class WorldController {
     this.onLampSettled?.(side);
   }
 
+  // Short camera kick: punctuates a reveal without changing the framing.
+  pulse() {
+    this.impulseT0 = performance.now();
+  }
+
   rotateItemBy(delta: number) {
     if (this.chapter() !== "inspect" || !this.nav.done(performance.now())) return;
     this.setItemRotation(this.item.group.rotation.y + delta);

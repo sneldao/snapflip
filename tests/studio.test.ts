@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { Hono } from "hono";
-import { SAMPLE_SPEC, evaluateDecision, parsePreviewBody, validateSpec, type StudioSpec } from "../src/studio/scene.ts";
+import { SAMPLE_SPEC, decodeScene, encodeScene, evaluateDecision, parsePreviewBody, validateSpec, type StudioSpec } from "../src/studio/scene.ts";
 import { devOnly, type App } from "../src/lib/util.ts";
 import { studioPage } from "../src/studio/page.ts";
 import { ChapterNav, easeInOutCubic } from "../src/studio/world/nav.ts";
@@ -188,10 +188,10 @@ describe("focusCard", () => {
 
 describe("hintFor", () => {
   const base = { chapter: "inspect", drawerOpen: false, didRotate: false, didLamp: false, didNav: true, splatOn: false, didClick: false } as const;
-  it("asks for one step at a time in the Atelier", () => {
-    assert.match(hintFor(base) ?? "", /drag the item/);
-    assert.match(hintFor({ ...base, didRotate: true }) ?? "", /lamp/);
-    assert.equal(hintFor({ ...base, didRotate: true, didLamp: true }), null);
+  it("guides the lamp reveal first, then the item, one step at a time", () => {
+    assert.match(hintFor(base) ?? "", /drag the lamp/);
+    assert.match(hintFor({ ...base, didLamp: true }) ?? "", /drag the item/);
+    assert.equal(hintFor({ ...base, didLamp: true, didRotate: true }), null);
   });
   it("asks for a pin only when a splat is loaded", () => {
     const done = { ...base, didRotate: true, didLamp: true };
@@ -200,6 +200,20 @@ describe("hintFor", () => {
   });
   it("hides while the drawer is open", () => {
     assert.equal(hintFor({ ...base, drawerOpen: true }), null);
+  });
+});
+
+describe("shareable scene links", () => {
+  it("round-trips a valid scene and condition", () => {
+    const raw = encodeScene({ ...valid(), rejectTorn: true }, "torn");
+    assert.deepEqual(decodeScene(raw), { spec: { ...valid(), rejectTorn: true }, condition: "torn" });
+  });
+  it("rejects missing, malformed, and inconsistent links", () => {
+    assert.equal(decodeScene(null), null);
+    assert.equal(decodeScene("not json"), null);
+    assert.equal(decodeScene(JSON.stringify({ spec: valid(), condition: "mint" })), null);
+    assert.equal(decodeScene(JSON.stringify({ spec: valid(), condition: "chipped" })), null);
+    assert.equal(decodeScene(JSON.stringify({ spec: { bogus: 1 }, condition: "worn" })), null);
   });
 });
 

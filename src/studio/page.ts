@@ -164,6 +164,22 @@ export function studioPage(aiEnabled: boolean) {
         .drawer { bottom: 60px; }
         #gesture-hint { bottom: 178px; }
       }
+      .toast { position: fixed; left: 50%; bottom: 74px; transform: translateX(-50%); z-index: 13; display: flex; align-items: center; gap: 12px;
+               background: var(--panel); border: 1px solid var(--amber); border-radius: 999px; padding: 8px 10px 8px 16px;
+               font-family: var(--mono); font-size: var(--min-text); color: var(--amber-hi); max-width: calc(100vw - 24px); }
+      .toast[hidden] { display: none; }
+      .toast button { border: 1px solid var(--amber); background: transparent; color: var(--amber-hi); border-radius: 999px; padding: 4px 12px; font: inherit; }
+      .toast button[hidden] { display: none; }
+      .chips-row { margin-top: 8px; }
+      @media (max-width: 860px) {
+        /* Bottom sheet: the one visible card rises from the bottom with a grab handle. */
+        #decision, #evidence-card, #intro { max-height: 42vh; overflow: auto; border-radius: 16px 16px 10px 10px; padding-top: 18px; }
+        #decision::before, #evidence-card::before, #intro::before { content: ""; display: block; width: 40px; height: 4px; border-radius: 2px; background: var(--line); margin: -8px auto 10px; }
+      }
+      @media (pointer: coarse) {
+        .marker, .chip, .nav button, .btn, .toast button { min-height: 44px; }
+        .chip, .nav button { display: inline-flex; align-items: center; }
+      }
       @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
     </style>
   </head>
@@ -186,13 +202,12 @@ export function studioPage(aiEnabled: boolean) {
       <div class="badges">
         <span class="badge sim">SAMPLE &middot; SIMULATED</span>
         <span class="badge" id="prov-badge">procedural proxy</span>
-        <span class="badge">scenario, unverified</span>
       </div>
       <div class="status">scene <b id="tl-scene">sample</b> &middot; condition <b id="tl-cond">worn</b> &middot; agent <b id="tl-agent">in</b></div>
     </header>
 
     <div class="card" id="decision" hidden>
-      <div class="who">MARA &middot; simulated collector &middot; scenario, unverified</div>
+      <div class="who">MARA &middot; simulated buyer &middot; not a real sale</div>
       <div class="verdict" id="verdict">—</div>
       <div class="why" id="why"></div>
       <div class="appraisal"><span id="cap-val">$0.00</span><span id="cap-note">scenario appraisal — collector's ceiling</span></div>
@@ -238,6 +253,11 @@ export function studioPage(aiEnabled: boolean) {
     <div id="beat" aria-live="polite"></div>
     <div id="diag" hidden></div>
 
+    <div class="toast" id="toast" role="status" aria-live="polite" hidden>
+      <span id="toast-text"></span>
+      <button type="button" id="toast-undo">Undo</button>
+    </div>
+
     <nav class="nav" aria-label="Chapters">
       <button type="button" data-ch="0" aria-pressed="true">Discover</button>
       <button type="button" data-ch="1" aria-pressed="false">Inspect</button>
@@ -246,6 +266,7 @@ export function studioPage(aiEnabled: boolean) {
       <button type="button" id="btn-scenario" aria-pressed="false">Scenario</button>
       <button type="button" id="btn-direct" aria-pressed="false">Direct scene</button>
       <button type="button" id="btn-reset">Reset view</button>
+      <button type="button" id="btn-share">Copy link</button>
       <button type="button" id="btn-sound" aria-pressed="true">Sound on</button>
     </nav>
 
@@ -264,6 +285,13 @@ export function studioPage(aiEnabled: boolean) {
         ${aiEnabled
           ? html``
           : html`<p class="hint">AI preview is not enabled on this deployment — the sample scene and direct controls still work.</p>`}
+        ${aiEnabled
+          ? html`<div class="row chips-row">
+              <button type="button" class="chip" data-suggest="move the light to the left">move light left</button>
+              <button type="button" class="chip" data-suggest="reject this copy if the label is torn">reject if torn</button>
+              <button type="button" class="chip" data-suggest="drop the collector's cap to $30">cap $30</button>
+            </div>`
+          : html``}
         <p class="hint">Refine the same scene, e.g.<br /><code>${FOLLOWUP_PROMPT}</code></p>
         <div class="err" id="model-error" hidden></div>
       </div>

@@ -85,6 +85,31 @@ export function parsePreviewBody(body: unknown): PreviewBody {
   return { ok: true, instruction: instruction.trim(), previous: prev };
 }
 
+// Shareable scene: the spec and condition as JSON in ?scene=.
+export function encodeScene(spec: StudioSpec, condition: StudioCondition): string {
+  return JSON.stringify({ spec, condition });
+}
+
+// Returns null for anything that is not a valid, consistent scene, so a bad
+// or hand-edited link falls back to the sample instead of breaking the world.
+export function decodeScene(raw: string | null): { spec: StudioSpec; condition: StudioCondition } | null {
+  if (!raw || raw.length > 2000) return null;
+  let data: unknown;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (!data || typeof data !== "object") return null;
+  const { spec, condition } = data as { spec?: unknown; condition?: unknown };
+  const v = validateSpec(spec);
+  if (!v) return null;
+  if (typeof condition !== "string" || !(["clean", "worn", "torn", "chipped"] as string[]).includes(condition)) return null;
+  if (v.object === "cartridge" && condition === "chipped") return null;
+  if (v.object === "generic" && condition === "torn") return null;
+  return { spec: v, condition: condition as StudioCondition };
+}
+
 export const SAMPLE_SPEC: StudioSpec = {
   title: "Worn cartridge inspection — sample",
   object: "cartridge",

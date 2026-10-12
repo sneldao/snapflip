@@ -547,12 +547,21 @@ export function buildAtelier(): ChapterBuild {
   lampAnchor.add(lamp);
   g.add(lampAnchor);
   const lampFocus = new THREE.Vector3(SHOTS.inspect.item.x, 0, SHOTS.inspect.item.z);
+  // Light pool on the platform where the lamp lands; it travels with the lamp.
+  const pool = new THREE.Mesh(
+    new THREE.CircleGeometry(0.42, 40),
+    new THREE.MeshBasicMaterial({ map: coneGradient(), transparent: true, opacity: 0.32, blending: THREE.AdditiveBlending, depthWrite: false }),
+  );
+  pool.rotation.x = -Math.PI / 2;
+  pool.renderOrder = 4;
+  g.add(pool);
   const LAMP_RADIUS = 1.9;
   let lampTheta = 0.35;
   function placeLamp(theta: number) {
     lampTheta = theta;
     lampAnchor.position.set(lampFocus.x + LAMP_RADIUS * Math.cos(theta), 0, lampFocus.z + LAMP_RADIUS * Math.sin(theta));
     lampAnchor.rotation.y = Math.atan2(-(lampFocus.z - lampAnchor.position.z), lampFocus.x - lampAnchor.position.x);
+    pool.position.set(lampFocus.x + 0.35 * Math.cos(theta), 0.81, lampFocus.z + 0.35 * Math.sin(theta));
   }
   placeLamp(lampTheta);
 

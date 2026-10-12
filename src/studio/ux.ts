@@ -1,5 +1,5 @@
 // Pure UI-state helpers shared by the studio client and the world controller.
-// Kept free of DOM and three.js imports so they can be unit-tested under node.
+// Kept free of DOM, three.js and other imports so they can be unit-tested under node.
 
 export type StudioChapter = "discover" | "inspect" | "auction";
 export type FocusCard = "intro" | "evidence" | "decision" | null;
@@ -52,8 +52,8 @@ export function hintFor(s: {
 }): string | null {
   if (s.drawerOpen) return null;
   if (s.chapter === "inspect") {
+    if (!s.didLamp) return "drag the lamp across the label to reveal it · or use ← →";
     if (!s.didRotate) return "drag the item to turn it · or use ↑ ↓";
-    if (!s.didLamp) return "drag the lamp to move the light · or use ← →";
     if (s.splatOn && !s.didClick) return "tap the object to pin evidence · tap a plate to match its angle";
     return null;
   }
