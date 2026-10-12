@@ -470,6 +470,10 @@ export class WorldController {
     this.chapterBuilds.auction.onPodPop = cb;
   }
 
+  setMaraStep(cb: () => void) {
+    this.chapterBuilds.auction.onMaraStep = cb;
+  }
+
   setSourcePhotos(photos: string[]) {
     this.chapterBuilds.inspect.setPlates?.(photos);
   }
@@ -693,6 +697,7 @@ export class WorldController {
     }
     this.chapterBuilds.auction.update?.(now);
     this.chapterBuilds.inspect.update?.(now);
+    this.chapterBuilds.auction.setWatchTarget?.(this.item.group.position);
     this.updateEvidenceArc();
     this.updateMarkerDom();
     if (this.postFX) this.postFX.render();

@@ -146,6 +146,12 @@ export function studioPage(aiEnabled: boolean) {
       #listing .skip { background: none; border: 0; padding: 0; font-size: 11px; color: #9a958c;
                        text-decoration: underline; cursor: pointer; font-family: inherit; }
       #listing .fineprint { font-size: 10px; color: #b3aea4; margin-top: 12px; line-height: 1.6; }
+      #beat { position: fixed; left: 50%; bottom: 23%; transform: translateX(-50%) translateY(8px); z-index: 12;
+              max-width: min(88vw, 560px); text-align: center; pointer-events: none;
+              font-style: italic; font-size: 1.08rem; letter-spacing: 0.01em; color: var(--porcelain);
+              text-shadow: 0 2px 14px rgba(0, 0, 0, 0.85), 0 0 40px rgba(0, 0, 0, 0.6);
+              opacity: 0; transition: opacity 0.8s ease, transform 0.8s ease; }
+      #beat.show { opacity: 1; transform: translateX(-50%) translateY(0); }
       @media (max-width: 860px) {
         .badge { font-size: 0.54rem; white-space: normal; overflow-wrap: anywhere; text-align: center; }
         .topbar { max-width: calc(100vw - 24px); padding: 8px 12px; }
@@ -189,7 +195,7 @@ export function studioPage(aiEnabled: boolean) {
     </header>
 
     <div class="card" id="decision" hidden>
-      <div class="who">simulated collector &middot; scenario, unverified</div>
+      <div class="who">MARA &middot; simulated collector &middot; scenario, unverified</div>
       <div class="verdict" id="verdict">—</div>
       <div class="why" id="why"></div>
       <div class="price" id="price"></div>
@@ -237,6 +243,7 @@ export function studioPage(aiEnabled: boolean) {
       </div>
     </div>
 
+    <div id="beat" aria-live="polite"></div>
     <div id="diag" hidden></div>
 
     <nav class="nav" aria-label="Chapters">

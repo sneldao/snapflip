@@ -234,6 +234,8 @@ export interface ChapterBuild {
   plateTargets?: THREE.Object3D[];
   setRationale?(text: string | null): void;
   onGavel?: () => void;
+  setWatchTarget?(v: THREE.Vector3): void;
+  onMaraStep?: () => void;
 }
 
 export function buildRack(): ChapterBuild {
@@ -320,6 +322,11 @@ export function buildRack(): ChapterBuild {
   const sampleTag = textPlate("SAMPLE", 0.4, 0.18);
   sampleTag.position.set(-0.52, 0.13, 0.47);
   niche.add(sampleTag);
+  // The seller's claim, pinned to the niche — the antagonist in one line.
+  const claimTag = textPlate("'MINT' — SELLER", 0.44, 0.14);
+  claimTag.position.set(0.42, 0.14, 0.44);
+  claimTag.rotation.x = -0.35;
+  niche.add(claimTag);
   g.add(niche);
 
   function shelvingUnit(x: number, boards: number[], width: number) {
@@ -681,7 +688,7 @@ export function buildChamber(): ChapterBuild {
   wall.rotation.y = Math.PI * 0.05;
   g.add(wall);
 
-  const podNames = ["SIMULATED COLLECTOR", "DEALER", "SNIPE", "CURATOR", "BROKER"];
+  const podNames = ["MARA — COLLECTOR", "DEALER", "SNIPE", "CURATOR", "BROKER"];
   const signalMat = mats.signalOn();
   const signalOffMat = mats.signalOff();
   const stationMat = mats.charcoalHi();
@@ -721,6 +728,58 @@ export function buildChamber(): ChapterBuild {
       g.add(signalLight);
     }
   });
+  // MARA — the embodied collector agent. A robed figure behind pod 0 whose
+  // visor tracks the item under scrutiny; on a walk she turns her back and
+  // steps off the dais — "walks away" made literal.
+  const mara = new THREE.Group();
+  const maraDir = new THREE.Vector2(collectorPos.x, collectorPos.z + 0.4).normalize();
+  const maraBaseX = collectorPos.x + maraDir.x * 0.62;
+  const maraBaseZ = collectorPos.z + maraDir.y * 0.62;
+  mara.position.set(maraBaseX, 0, maraBaseZ);
+  const maraBaseRot = Math.atan2(-maraBaseX, -0.2 - maraBaseZ);
+  mara.rotation.y = maraBaseRot;
+  const robeMat = new THREE.MeshStandardMaterial({ color: 0x352330, roughness: 0.85 });
+  const robe = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.27, 0.98, 20), robeMat);
+  robe.position.y = 0.49;
+  robe.castShadow = true;
+  mara.add(robe);
+  const shoulders = new THREE.Mesh(new THREE.SphereGeometry(0.13, 16, 12), robeMat);
+  shoulders.scale.set(1.3, 0.62, 0.95);
+  shoulders.position.y = 0.94;
+  shoulders.castShadow = true;
+  mara.add(shoulders);
+  const hood = new THREE.Mesh(new THREE.SphereGeometry(0.115, 16, 12, Math.PI * 0.6, Math.PI * 0.8, 0, Math.PI * 0.7), robeMat);
+  hood.position.set(0, 1.04, -0.035);
+  hood.castShadow = true;
+  mara.add(hood);
+  const collar = new THREE.Mesh(new THREE.TorusGeometry(0.08, 0.016, 10, 20), mats.brass());
+  collar.rotation.x = Math.PI / 2;
+  collar.position.y = 0.985;
+  mara.add(collar);
+  const headPivot = new THREE.Group();
+  headPivot.position.y = 1.07;
+  const maraHead = new THREE.Mesh(new THREE.SphereGeometry(0.082, 18, 14), mats.porcelain());
+  maraHead.scale.z = 0.9;
+  maraHead.castShadow = true;
+  headPivot.add(maraHead);
+  const visorMat = new THREE.MeshStandardMaterial({ color: palette.amber, emissive: palette.amber, emissiveIntensity: 0.5, roughness: 0.5 });
+  const visor = new THREE.Mesh(new THREE.BoxGeometry(0.125, 0.018, 0.03), visorMat);
+  visor.position.set(0, 0.012, 0.068);
+  headPivot.add(visor);
+  mara.add(headPivot);
+  g.add(mara);
+  const watchT = new THREE.Vector3(0, 1.2, -0.1);
+  const maraWorld = new THREE.Vector3();
+  let maraMode: "watch" | "in" | "out" = "watch";
+  let walkT0 = -1;
+  let nodT0 = -1;
+  const walkFrom = { rot: 0, x: 0, z: 0 };
+  let visorLevel = 0.5;
+  let visorTarget = 0.5;
+  let stepFired = false;
+  const MARA_WALK_AT = 950;
+  const MARA_WALK_MS = 1500;
+
   // Dropout basis card under the collector pod — replays the reason in-world.
   const rationaleCanvas = document.createElement("canvas");
   rationaleCanvas.width = 256;
@@ -877,7 +936,6 @@ export function buildChamber(): ChapterBuild {
     beads.push(b);
     g.add(b);
   }
-  const lampEndLocal = lamps[0].position.clone();
 
   function applySignal() {
     lamps[0].material = signalOn ? signalMat : signalOffMat;
@@ -897,10 +955,14 @@ export function buildChamber(): ChapterBuild {
     }
   }
 
+  const visorWorld = new THREE.Vector3();
+
   function rebuildArc() {
     if (!arcAnchor) return;
     const a = arcAnchor.clone().sub(g.position);
-    const b = lampEndLocal.clone();
+    // The thread ends at her eye — the evidence reaches the collector.
+    visor.getWorldPosition(visorWorld).sub(g.position);
+    const b = visorWorld.clone();
     const mid = a.clone().add(b).multiplyScalar(0.5);
     mid.y += 1.2;
     const curve = new THREE.QuadraticBezierCurve3(a, mid, b);
@@ -936,6 +998,13 @@ export function buildChamber(): ChapterBuild {
       introActive = !reducedMotion;
       gavelFallAt = -1;
       gavelPivot.rotation.z = GAVEL_UP;
+      maraMode = "watch";
+      walkT0 = -1;
+      nodT0 = -1;
+      stepFired = false;
+      mara.position.set(maraBaseX, 0, maraBaseZ);
+      mara.rotation.y = maraBaseRot;
+      visorTarget = 0.5;
       lamps.forEach((lamp, i) => {
         lamp.material = lampMats[i];
       });
@@ -971,6 +1040,9 @@ export function buildChamber(): ChapterBuild {
         lines.slice(0, 3).forEach((l, li) => c2.fillText(l, 128, 40 + li * 13));
       }
       rationaleTex.needsUpdate = true;
+    },
+    setWatchTarget(v) {
+      watchT.copy(v).sub(g.position);
     },
     setEvidenceArc(anchorWorld) {
       if (!anchorWorld) {
@@ -1038,6 +1110,61 @@ export function buildChamber(): ChapterBuild {
       // The room itself reacts: dropout dims the house lights toward the pods.
       const warmTarget = introEndAt >= 0 && !signalOn ? WARM_BASE * 0.42 : WARM_BASE;
       warm.intensity += (warmTarget - warm.intensity) * 0.04;
+      // MARA — watch, verdict, walk.
+      if (introEndAt >= 0 && maraMode === "watch") {
+        maraMode = signalOn ? "in" : "out";
+        if (maraMode === "in") {
+          nodT0 = introEndAt + 650;
+          visorTarget = 2.4;
+        } else {
+          walkT0 = introEndAt + MARA_WALK_AT;
+          walkFrom.rot = mara.rotation.y;
+          walkFrom.x = mara.position.x;
+          walkFrom.z = mara.position.z;
+          visorTarget = 0.06;
+        }
+      }
+      if (nodT0 >= 0) {
+        const np = (nowMs - nodT0) / 700;
+        if (np >= 1) {
+          headPivot.rotation.x = 0;
+          nodT0 = -1;
+        } else if (np > 0) {
+          headPivot.rotation.x = Math.sin(Math.min(1, np) * Math.PI) * 0.24;
+        }
+      }
+      if (walkT0 >= 0) {
+        const wp = introReduced ? 1 : (nowMs - walkT0) / MARA_WALK_MS;
+        if (wp > 0) {
+          const k = easeInOutCubic(Math.min(1, wp));
+          mara.rotation.y = walkFrom.rot + Math.PI * k;
+          mara.position.x = walkFrom.x + maraDir.x * 0.55 * k;
+          mara.position.z = walkFrom.z + maraDir.y * 0.55 * k;
+          if (!stepFired && k > 0.55) {
+            stepFired = true;
+            this.onMaraStep?.();
+          }
+          if (arcAnchor) arcDirty = true;
+          if (wp >= 1) walkT0 = -1;
+        }
+      }
+      mara.getWorldPosition(maraWorld).sub(g.position);
+      let wantYaw = 0;
+      let wantPitch: number;
+      if (maraMode !== "out") {
+        const dx = watchT.x - maraWorld.x;
+        const dz = watchT.z - maraWorld.z;
+        wantYaw = Math.atan2(Math.sin(Math.atan2(dx, dz) - mara.rotation.y), Math.cos(Math.atan2(dx, dz) - mara.rotation.y));
+        wantYaw = Math.max(-0.8, Math.min(0.8, wantYaw));
+        wantPitch = 0.06;
+      } else {
+        wantPitch = 0.3; // downcast once she's out
+      }
+      headPivot.rotation.y += (wantYaw - headPivot.rotation.y) * 0.08;
+      if (nodT0 < 0) headPivot.rotation.x += (wantPitch - headPivot.rotation.x) * 0.08;
+      headPivot.position.y = 1.07 + Math.sin(nowMs * 0.0011) * 0.006;
+      visorLevel += (visorTarget - visorLevel) * 0.07;
+      visorMat.emissiveIntensity = visorLevel;
       const arcOn = arcMesh?.visible === true;
       beads.forEach((b, i) => {
         b.visible = arcOn;

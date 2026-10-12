@@ -113,7 +113,20 @@ function enterWorld() {
   listingEl.classList.add("lift");
   setTimeout(() => listingEl.remove(), reducedMotion ? 0 : 900);
   syncIntro();
+  setTimeout(() => beat("The seller said mint."), reducedMotion ? 0 : 800);
 }
+
+// The narrator — beat cards stitch the three acts into a story. First-visit
+// only; the writing carries the personality, not more UI.
+const beatEl = el<HTMLDivElement>("beat");
+let beatTimer = 0;
+function beat(text: string, hold = 2800) {
+  beatEl.textContent = text;
+  beatEl.classList.add("show");
+  clearTimeout(beatTimer);
+  beatTimer = window.setTimeout(() => beatEl.classList.remove("show"), hold);
+}
+const seenChapters = new Set<number>([0]);
 el<HTMLButtonElement>("listing-go").addEventListener("click", enterWorld);
 el<HTMLButtonElement>("listing-skip").addEventListener("click", enterWorld);
 if (!listingDone) {
@@ -246,6 +259,7 @@ if (world) {
   };
   world.onGavel = () => audio.gavel();
   world.setPodPop?.((i) => audio.tick(i));
+  world.setMaraStep(() => audio.thud());
 }
 
 soundBtn.setAttribute("aria-pressed", String(audio.enabled()));
@@ -338,6 +352,18 @@ function setChapter(i: number) {
   world?.setChapter(i);
   syncIntro();
   updateHint();
+  if (!seenChapters.has(i)) {
+    seenChapters.add(i);
+    if (CHAPTERS[i] === "inspect") {
+      setTimeout(() => beat("The light doesn't lie."), reducedMotion ? 0 : 800);
+    } else if (CHAPTERS[i] === "auction") {
+      setTimeout(() => beat("Now the collector decides."), reducedMotion ? 0 : 800);
+      setTimeout(() => {
+        const d = evaluateDecision(spec, condition);
+        beat(d.eligible ? "The claim holds — this time." : "And the claim doesn't survive.", 3400);
+      }, reducedMotion ? 1200 : 4800);
+    }
+  }
   if (CHAPTERS[i] === "auction") world?.setEvidenceFocus(selectedMarker >= 0 ? selectedMarker : null);
   document.querySelectorAll<HTMLButtonElement>("[data-ch]").forEach((b) => {
     b.setAttribute("aria-pressed", String(Number(b.dataset.ch) === i));

@@ -122,6 +122,10 @@ export function createAudio() {
     whoosh() {
       noiseHit(0.9, 240, 0.11, "bandpass", 1600);
     },
+    thud() {
+      noiseHit(0.13, 260, 0.34, "lowpass");
+      tone(72, 0.2, 0.22, "sine", 34);
+    },
     toggle() {
       muted = !muted;
       try {
