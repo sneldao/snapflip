@@ -5,6 +5,7 @@ import { SAMPLE_SPEC, evaluateDecision, parsePreviewBody, validateSpec, type Stu
 import { devOnly, type App } from "../src/lib/util.ts";
 import { studioPage } from "../src/studio/page.ts";
 import { ChapterNav, easeInOutCubic } from "../src/studio/world/nav.ts";
+import { clampLampTheta, focusCard, hintFor, lampSide, wrapAngle } from "../src/studio/ux.ts";
 import type { Env } from "../src/types.ts";
 
 const valid = (): StudioSpec => ({ ...SAMPLE_SPEC });
@@ -147,6 +148,58 @@ describe("ChapterNav", () => {
     assert.equal(easeInOutCubic(0), 0);
     assert.equal(easeInOutCubic(0.5), 0.5);
     assert.equal(easeInOutCubic(1), 1);
+  });
+});
+
+describe("lamp angle helpers", () => {
+  it("leaves angles away from the dead band untouched", () => {
+    assert.equal(clampLampTheta(0.35), 0.35);
+    assert.equal(clampLampTheta(Math.PI - 0.35), Math.PI - 0.35);
+  });
+  it("pushes angles inside the dead band out to its edge", () => {
+    const dead = -Math.PI / 2;
+    assert.ok(Math.abs(clampLampTheta(dead + 0.05) - dead) >= 0.2 - 1e-9);
+    assert.ok(Math.abs(clampLampTheta(dead - 0.1) - dead) >= 0.2 - 1e-9);
+  });
+  it("wraps angles into (-pi, pi]", () => {
+    assert.ok(Math.abs(wrapAngle(3 * Math.PI) - Math.PI) < 1e-9);
+  });
+  it("maps the lamp to a side by its x direction", () => {
+    assert.equal(lampSide(0.35), "right");
+    assert.equal(lampSide(Math.PI - 0.35), "left");
+  });
+});
+
+describe("focusCard", () => {
+  const base = { introDone: false, listingDone: true, drawerOpen: false, selectedMarker: -1 };
+  it("shows the intro only on an unvisited discover chapter", () => {
+    assert.equal(focusCard({ ...base, chapter: "discover" }), "intro");
+    assert.equal(focusCard({ ...base, chapter: "discover", drawerOpen: true }), null);
+    assert.equal(focusCard({ ...base, chapter: "discover", introDone: true }), null);
+  });
+  it("shows evidence only with a selected marker in the Atelier", () => {
+    assert.equal(focusCard({ ...base, chapter: "inspect" }), null);
+    assert.equal(focusCard({ ...base, chapter: "inspect", selectedMarker: 0 }), "evidence");
+  });
+  it("shows the decision card in the Chamber", () => {
+    assert.equal(focusCard({ ...base, chapter: "auction" }), "decision");
+  });
+});
+
+describe("hintFor", () => {
+  const base = { chapter: "inspect", drawerOpen: false, didRotate: false, didLamp: false, didNav: true, splatOn: false, didClick: false } as const;
+  it("asks for one step at a time in the Atelier", () => {
+    assert.match(hintFor(base) ?? "", /drag the item/);
+    assert.match(hintFor({ ...base, didRotate: true }) ?? "", /lamp/);
+    assert.equal(hintFor({ ...base, didRotate: true, didLamp: true }), null);
+  });
+  it("asks for a pin only when a splat is loaded", () => {
+    const done = { ...base, didRotate: true, didLamp: true };
+    assert.equal(hintFor({ ...done, splatOn: false }), null);
+    assert.match(hintFor({ ...done, splatOn: true }) ?? "", /pin evidence/);
+  });
+  it("hides while the drawer is open", () => {
+    assert.equal(hintFor({ ...base, drawerOpen: true }), null);
   });
 });
 

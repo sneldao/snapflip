@@ -6,16 +6,12 @@ import type { StudioCondition, StudioSpec } from "../scene";
 import { buildItem, type BuiltItem } from "./assets";
 import { CHAPTERS, ChapterNav, RAKING_THETA, SHOTS, buildAtelier, buildChamber, buildRack, transitMids, type ChapterBuild, type ChapterId, type ChapterShot } from "./chapters";
 import { disposeObject } from "./materials";
+import { MarkerLayer } from "./markers";
+import { createPostFX, type PostFX } from "./postfx";
+import { clampLampTheta, lampSide } from "../ux";
 
 type StudioRenderer = THREE.WebGLRenderer | WebGPURenderer;
 type RendererBackend = "webgpu" | "webgl2" | "webgl";
-
-export interface MarkerBinding {
-  el: HTMLElement;
-  anchor: THREE.Vector3;
-  label: string;
-  gated?: boolean;
-}
 
 const KEY_INTENSITY = 70;
 
@@ -23,14 +19,15 @@ export class WorldController {
   private renderer: StudioRenderer;
   private backend: RendererBackend;
   private splat: THREE.Mesh | null = null;
-  private postFX: { render(): void } | null = null;
+  private postFX: PostFX | null = null;
   private scene = new THREE.Scene();
   private camera: THREE.PerspectiveCamera;
   private controls: OrbitControls;
   private nav: ChapterNav;
   private item: BuiltItem;
   private chapterBuilds: Record<ChapterId, ChapterBuild>;
-  private markers: MarkerBinding[] = [];
+  private markerLayer = new MarkerLayer();
+  private hover: "lamp" | "item" | null = null;
   private raycaster = new THREE.Raycaster();
   private camFrom = new THREE.Vector3();
   private lookFrom = new THREE.Vector3();
@@ -143,6 +140,8 @@ export class WorldController {
     // Node-material shadow system doesn't support PCFSoft; legacy WebGL does.
     this.renderer.shadowMap.type = backend === "webgl" ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
     container.appendChild(this.renderer.domElement);
+    // Lets touch drags reach the lamp and item instead of scrolling the page.
+    this.renderer.domElement.style.touchAction = "none";
 
     this.camera = new THREE.PerspectiveCamera(44, 1, 0.1, 80);
     this.baseFov = 44;
@@ -202,6 +201,7 @@ export class WorldController {
     dom.addEventListener("pointermove", this.onPointerMove);
     dom.addEventListener("pointerup", this.onPointerUp);
     dom.addEventListener("pointercancel", this.onPointerUp);
+    dom.addEventListener("pointerleave", this.onPointerLeave);
 
     window.addEventListener("resize", this.resize);
     this.resize();
@@ -252,22 +252,23 @@ export class WorldController {
     this.pointerNdc(e);
     this.parallaxTarget.set(this.ndc.x, this.ndc.y);
     if (!this.dragMode) {
-      if (!this.pendingDrag) return;
+      if (!this.pendingDrag) {
+        this.updateHover();
+        return;
+      }
       if (Math.hypot(e.clientX - this.downX, e.clientY - this.downY) <= 6) return;
       this.dragMode = this.pendingDrag;
       this.controls.enabled = false;
       this.lastX = e.clientX;
       this.itemVel = 0;
       this.onDrag?.(this.dragMode);
+      this.setCursor("grabbing");
     }
     if (this.dragMode === "lamp") {
       this.revealLamp();
       this.raycaster.setFromCamera(this.ndc, this.camera);
       if (this.raycaster.ray.intersectPlane(this.floorPlane, this.floorHit)) {
-        let theta = Math.atan2(this.floorHit.z - this.lampFocus.z, this.floorHit.x - this.lampFocus.x);
-        const dead = -Math.PI / 2;
-        const off = Math.atan2(Math.sin(theta - dead), Math.cos(theta - dead));
-        if (Math.abs(off) < 0.2) theta = dead + (off === 0 ? 0.2 : Math.sign(off) * 0.2);
+        const theta = clampLampTheta(Math.atan2(this.floorHit.z - this.lampFocus.z, this.floorHit.x - this.lampFocus.x));
         this.setLampNow(theta);
         this.lampUserTheta = theta;
       }
@@ -279,6 +280,36 @@ export class WorldController {
     }
   };
 
+  // Hover feedback: grab cursor and a halo over the lamp head or the item.
+  private updateHover() {
+    if (this.disposed || this.dragMode) return;
+    let next: "lamp" | "item" | null = null;
+    if (this.chapter() === "inspect" && this.controls.enabled && this.nav.done(performance.now())) {
+      this.raycaster.setFromCamera(this.ndc, this.camera);
+      const lampTarget = this.chapterBuilds.inspect.lampDragTarget;
+      if (lampTarget && this.raycaster.intersectObject(lampTarget, true).length > 0) next = "lamp";
+      else if (this.raycaster.intersectObject(this.item.group, true).length > 0) next = "item";
+    }
+    if (next === this.hover) return;
+    this.hover = next;
+    this.chapterBuilds.inspect.setHover?.(next === "lamp");
+    this.setCursor(next ? "grab" : "");
+  }
+
+  private clearHover() {
+    this.hover = null;
+    this.chapterBuilds.inspect.setHover?.(false);
+    this.setCursor("");
+  }
+
+  private onPointerLeave = () => {
+    if (!this.dragMode) this.clearHover();
+  };
+
+  private setCursor(cursor: string) {
+    this.renderer.domElement.style.cursor = cursor;
+  }
+
   private onPointerUp = (e: PointerEvent) => {
     const wasDrag = this.dragMode !== null;
     if (this.dragMode === "lamp" && this.lampUserTheta != null) {
@@ -289,6 +320,8 @@ export class WorldController {
     this.dragMode = null;
     this.pendingDrag = null;
     this.controls.enabled = this.chapter() === "inspect" && this.nav.done(performance.now());
+    this.pointerNdc(e);
+    this.updateHover();
     if (!wasDrag && Math.hypot(e.clientX - this.downX, e.clientY - this.downY) <= 6) {
       this.pointerNdc(e);
       this.handleTap();
@@ -353,6 +386,8 @@ export class WorldController {
     splat.localToWorld(p);
     this.item.group.worldToLocal(p);
     this.item.anchors[0] = p;
+    // The marker must follow the new anchor, not the replaced vector.
+    this.rebindMarkerAnchors();
     this.onEvidencePinned?.();
   }
 
@@ -374,6 +409,8 @@ export class WorldController {
   }
 
   setChapter(idx: number, nowMs = performance.now()) {
+    this.clearHover();
+    this.markerLayer.invalidate();
     this.camFrom.copy(this.camera.position);
     this.lookFrom.copy(this.lookTarget);
     this.itemFrom.copy(this.item.group.position);
@@ -411,6 +448,23 @@ export class WorldController {
     this.keyGainTarget = 1;
   }
 
+  // Keyboard lamp control: same clamp, side settle and reveal as a drag.
+  nudgeLampBy(delta: number) {
+    if (this.chapter() !== "inspect" || !this.nav.done(performance.now())) return;
+    const theta = clampLampTheta(this.lampTheta + delta);
+    this.lampUserTheta = theta;
+    this.nudgeLamp(theta, 260);
+    const side = lampSide(theta);
+    this.lastLightSide = side;
+    this.onLampSettled?.(side);
+  }
+
+  rotateItemBy(delta: number) {
+    if (this.chapter() !== "inspect" || !this.nav.done(performance.now())) return;
+    this.setItemRotation(this.item.group.rotation.y + delta);
+    this.onDrag?.("item");
+  }
+
   // Scripted lamp sweep for the demo autopilot — counts as a reveal.
   nudgeLamp(theta: number, dur = 900) {
     const delta = Math.atan2(Math.sin(theta - this.lampTheta), Math.cos(theta - this.lampTheta));
@@ -424,17 +478,12 @@ export class WorldController {
   }
 
   setMarkers(bindings: { el: HTMLElement; gated?: boolean }[]) {
-    this.markers = bindings.map((b, i) => {
-      const label = this.item.anchorLabels[i] ?? "";
-      const labelEl = b.el.querySelector("span:last-child");
-      if (labelEl) labelEl.textContent = label;
-      return { el: b.el, anchor: this.item.anchors[i] ?? new THREE.Vector3(), label, gated: b.gated ?? false };
-    });
+    this.markerLayer.set(bindings, this.item.anchors, this.item.anchorLabels);
   }
 
   // Fog-of-war lift: first evidence interaction reveals the full marker layer.
   unlockEvidence() {
-    for (const mk of this.markers) mk.gated = false;
+    this.markerLayer.unlock();
   }
 
   applySpec(spec: StudioSpec, condition: StudioCondition) {
@@ -584,12 +633,7 @@ export class WorldController {
   }
 
   private rebindMarkerAnchors() {
-    this.markers.forEach((mk, i) => {
-      mk.anchor = this.item.anchors[i] ?? mk.anchor;
-      mk.label = this.item.anchorLabels[i] ?? mk.label;
-      const labelEl = mk.el.querySelector("span:last-child");
-      if (labelEl) labelEl.textContent = mk.label;
-    });
+    this.markerLayer.rebind(this.item.anchors, this.item.anchorLabels);
   }
 
   private frame() {
@@ -699,55 +743,14 @@ export class WorldController {
     this.chapterBuilds.inspect.update?.(now);
     this.chapterBuilds.auction.setWatchTarget?.(this.item.group.position);
     this.updateEvidenceArc();
-    this.updateMarkerDom();
+    this.markerLayer.update(this.camera, this.item.group, this.container.clientWidth, this.container.clientHeight, this.chapter() === "inspect" && this.nav.done(now));
     if (this.postFX) this.postFX.render();
     else this.renderer.render(this.scene, this.camera);
   }
 
   async enablePostFX(): Promise<boolean> {
-    try {
-      const [{ PostProcessing }, tsl, { bloom }, { film }] = await Promise.all([
-        import("three/webgpu"),
-        import("three/tsl"),
-        import("three/examples/jsm/tsl/display/BloomNode.js"),
-        import("three/examples/jsm/tsl/display/FilmNode.js"),
-      ]);
-      const pipeline = new PostProcessing(this.renderer as never);
-      const scenePass = tsl.pass(this.scene, this.camera);
-      const color = scenePass.getTextureNode();
-      const graded = color
-        .add(bloom(color, 0.30, 0.22, 0.82))
-        .mul(tsl.smoothstep(0.88, 0.52, tsl.length(tsl.uv().sub(tsl.vec2(0.5)))));
-      pipeline.outputNode = film(graded, tsl.float(0.09));
-      this.postFX = pipeline;
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  private updateMarkerDom() {
-    const show = this.chapter() === "inspect" && this.nav.done(performance.now());
-    const w = this.container.clientWidth;
-    const h = this.container.clientHeight;
-    const camDir = new THREE.Vector3();
-    for (const mk of this.markers) {
-      if (!show || mk.gated) {
-        mk.el.style.display = "none";
-        continue;
-      }
-      const world = mk.anchor.clone().applyMatrix4(this.item.group.matrixWorld);
-      const proj = world.clone().project(this.camera);
-      camDir.copy(world).sub(this.camera.position).normalize();
-      this.raycaster.set(this.camera.position, camDir);
-      const dist = world.distanceTo(this.camera.position);
-      const occluded = proj.z > 1 || this.raycaster.intersectObject(this.item.group, true).some((hit) => hit.distance < dist - 0.06);
-      mk.el.style.left = `${(proj.x * 0.5 + 0.5) * w}px`;
-      mk.el.style.top = `${(-proj.y * 0.5 + 0.5) * h}px`;
-      mk.el.style.display = occluded ? "none" : "";
-      const labelEl = mk.el.querySelector("span:last-child");
-      if (labelEl) labelEl.textContent = mk.label;
-    }
+    this.postFX = await createPostFX(this.renderer as WebGPURenderer, this.scene, this.camera);
+    return this.postFX !== null;
   }
 
   dispose() {
@@ -758,6 +761,7 @@ export class WorldController {
     dom.removeEventListener("pointermove", this.onPointerMove);
     dom.removeEventListener("pointerup", this.onPointerUp);
     dom.removeEventListener("pointercancel", this.onPointerUp);
+    dom.removeEventListener("pointerleave", this.onPointerLeave);
     window.removeEventListener("resize", this.resize);
     for (const id of CHAPTERS) disposeObject(this.chapterBuilds[id].group);
     this.item.dispose();

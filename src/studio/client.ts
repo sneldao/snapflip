@@ -8,6 +8,7 @@ import {
 import { createAudio } from "./audio";
 import { CHAPTERS, RAKING_THETA } from "./world/chapters";
 import { WorldController } from "./world/WorldController";
+import { ITEM_STEP, LAMP_STEP, focusCard, hintFor } from "./ux";
 
 const CONDS_BY_OBJECT: Record<StudioSpec["object"], StudioCondition[]> = {
   cartridge: ["clean", "worn", "torn"],
@@ -18,6 +19,13 @@ const OBJECT_NAMES: Record<StudioSpec["object"], string> = {
   cartridge: "cartridge proxy",
   generic: "object proxy",
 };
+
+const COND_FACTOR: Record<StudioCondition, number> = { clean: 1, worn: 0.82, torn: 0.45, chipped: 0.5 };
+
+const LISTING_PROMPT = "turn this listing into a world — inspect it, test the claim, let a buyer decide";
+
+type Snapshot = { spec: StudioSpec; condition: StudioCondition };
+type Drawer = "direct" | "scenario" | null;
 
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -31,6 +39,8 @@ const decisionCard = el<HTMLDivElement>("decision");
 const verdictEl = el<HTMLDivElement>("verdict");
 const whyEl = el<HTMLDivElement>("why");
 const priceEl = el<HTMLDivElement>("price");
+const capValEl = el<HTMLSpanElement>("cap-val");
+const capNoteEl = el<HTMLSpanElement>("cap-note");
 const errEl = el<HTMLDivElement>("model-error");
 const promptEl = el<HTMLTextAreaElement>("prompt");
 const sendBtn = el<HTMLButtonElement>("send");
@@ -41,6 +51,7 @@ const evTitle = el<HTMLDivElement>("ev-title");
 const evDetail = el<HTMLDivElement>("ev-detail");
 const provItem = el<HTMLElement>("prov-item");
 const provPhotos = el<HTMLElement>("prov-photos");
+const provBadge = el<HTMLElement>("prov-badge");
 const photoInput = el<HTMLInputElement>("photo-input");
 const photoList = el<HTMLDivElement>("photo-list");
 const photoClear = el<HTMLButtonElement>("photo-clear");
@@ -48,19 +59,9 @@ const photoErr = el<HTMLDivElement>("photo-error");
 const tlScene = el<HTMLSpanElement>("tl-scene");
 const tlCond = el<HTMLSpanElement>("tl-cond");
 const tlAgent = el<HTMLSpanElement>("tl-agent");
-const drawer = el<HTMLDivElement>("drawer");
+const drawerEl = el<HTMLDivElement>("drawer");
 const panelDirect = el<HTMLDivElement>("panel-direct");
 const panelScenario = el<HTMLDivElement>("panel-scenario");
-
-let spec: StudioSpec = { ...SAMPLE_SPEC };
-let condition: StudioCondition = spec.condition;
-let selectedMarker = -1;
-let chapter = 0;
-let splatOn = false;
-const undoStack: { spec: StudioSpec; condition: StudioCondition }[] = [];
-
-const params = new URLSearchParams(location.search);
-const audio = createAudio();
 const hintEl = el<HTMLDivElement>("gesture-hint");
 const soundBtn = el<HTMLButtonElement>("btn-sound");
 const bootEl = el<HTMLDivElement>("boot");
@@ -69,30 +70,43 @@ const bootBar = el<HTMLSpanElement>("boot-bar");
 const introEl = el<HTMLDivElement>("intro");
 const listingEl = el<HTMLDivElement>("listing");
 const listingPromptEl = el<HTMLDivElement>("listing-prompt");
-const appraisalEl = el<HTMLDivElement>("appraisal");
-const capValEl = el<HTMLDivElement>("cap-val");
-const did = { rotate: false, lamp: false, nav: false, click: false };
-let introDone = params.get("demo") === "1" || chDeepLink();
-let evidenceUnlocked = params.get("ev") !== null;
+const beatEl = el<HTMLDivElement>("beat");
+const diagEl = el<HTMLDivElement>("diag");
+const markerBtns: HTMLButtonElement[] = [];
 
-function chDeepLink() {
-  return params.get("ch") !== null;
-}
+const params = new URLSearchParams(location.search);
+const audio = createAudio();
+
+// One store: everything on screen and in the world is derived from this.
+const state = {
+  spec: { ...SAMPLE_SPEC } as StudioSpec,
+  condition: SAMPLE_SPEC.condition as StudioCondition,
+  chapter: 0,
+  selectedMarker: -1,
+  splatOn: false,
+  evidenceUnlocked: params.get("ev") !== null,
+  introDone: params.get("demo") === "1" || params.has("ch"),
+  listingDone: params.get("fast") === "1" || params.has("ch"),
+  drawer: null as Drawer,
+  sourcePhotos: [] as string[],
+};
+
+// What the user has already done; drives the single hint line.
+const did = { rotate: false, lamp: false, nav: false, click: false };
+const undoStack: Snapshot[] = [];
 
 // Director's mode: the judge plants the hidden condition via ?cond=; the
-// seller's claim stays on the listing overlay. Dramatic irony as a URL param.
+// seller's claim stays on the listing overlay.
 const condParam = params.get("cond");
-if (condParam && (CONDS_BY_OBJECT[spec.object] as readonly string[]).includes(condParam)) {
-  condition = condParam as StudioCondition;
+if (condParam && (CONDS_BY_OBJECT[state.spec.object] as readonly string[]).includes(condParam)) {
+  state.condition = condParam as StudioCondition;
 }
 const claimParam = params.get("claim");
 if (claimParam) el<HTMLElement>("listing-claim").textContent = claimParam;
-if (params.get("rule") === "1") spec = { ...spec, rejectTorn: true, rejectChip: true };
+if (params.get("rule") === "1") state.spec = { ...state.spec, rejectTorn: true, rejectChip: true };
 
-// Cold open: a flat marketplace listing is the first paint — "this is a
-// listing today" — then it lifts and the world is already built beneath.
-const LISTING_PROMPT = "turn this listing into a world — inspect it, test the claim, let a buyer decide";
-let listingDone = params.get("fast") === "1" || chDeepLink();
+// ---------- narrator, listing, boot ----------
+
 let listingTypeTimer = 0;
 function typeListing() {
   if (reducedMotion) {
@@ -106,19 +120,18 @@ function typeListing() {
     if (i >= LISTING_PROMPT.length) clearInterval(listingTypeTimer);
   }, 26);
 }
+
 function enterWorld() {
-  if (listingDone) return;
-  listingDone = true;
+  if (state.listingDone) return;
+  state.listingDone = true;
   clearInterval(listingTypeTimer);
   listingEl.classList.add("lift");
   setTimeout(() => listingEl.remove(), reducedMotion ? 0 : 900);
-  syncIntro();
+  render();
   setTimeout(() => beat("The seller said mint."), reducedMotion ? 0 : 800);
 }
 
-// The narrator — beat cards stitch the three acts into a story. First-visit
-// only; the writing carries the personality, not more UI.
-const beatEl = el<HTMLDivElement>("beat");
+// Beat cards stitch the three acts into a story. First visit only.
 let beatTimer = 0;
 function beat(text: string, hold = 2800) {
   beatEl.textContent = text;
@@ -127,9 +140,10 @@ function beat(text: string, hold = 2800) {
   beatTimer = window.setTimeout(() => beatEl.classList.remove("show"), hold);
 }
 const seenChapters = new Set<number>([0]);
+
 el<HTMLButtonElement>("listing-go").addEventListener("click", enterWorld);
 el<HTMLButtonElement>("listing-skip").addEventListener("click", enterWorld);
-if (!listingDone) {
+if (!state.listingDone) {
   listingEl.hidden = false;
   if (params.get("demo") !== "1") listingPromptEl.textContent = LISTING_PROMPT;
 }
@@ -145,68 +159,28 @@ function bootDone() {
 }
 bootStep(25, "waking the renderer");
 
-function syncIntro() {
-  introEl.hidden = introDone || !listingDone || CHAPTERS[chapter] !== "discover" || drawer.classList.contains("open");
-}
+// ---------- demo autopilot (cancellable) ----------
 
-// The ticker: a condition-discounted appraisal animates as the scenario
-// moves — stakes made visible, and the number falling is the story.
-const COND_FACTOR: Record<StudioCondition, number> = { clean: 1, worn: 0.82, torn: 0.45, chipped: 0.5 };
-function appraisalCents() {
-  return Math.round(spec.maxCents * COND_FACTOR[condition]);
+// ?demo=1 scripts three acts. Every step is tracked so that any real user
+// input cancels the rest of the script instead of fighting the user's state.
+let demoActive = params.get("demo") === "1";
+const demoTimers: number[] = [];
+function demoAfter(fn: () => void, ms: number) {
+  demoTimers.push(window.setTimeout(fn, ms));
 }
-let capShown = -1;
-function setAppraisal(cents: number, eligible: boolean) {
-  el<HTMLDivElement>("cap-note").textContent = eligible
-    ? "scenario appraisal — collector's ceiling"
-    : "scenario appraisal — collector walks";
-  if (cents === capShown) return;
-  if (capShown < 0 || reducedMotion) {
-    capShown = cents;
-    capValEl.textContent = `$${(cents / 100).toFixed(2)}`;
-    return;
-  }
-  const from = capShown;
-  capShown = cents;
-  appraisalEl.classList.toggle("down", cents < from);
-  appraisalEl.classList.toggle("up", cents > from);
-  const t0 = performance.now();
-  const tick = () => {
-    const p = Math.min(1, (performance.now() - t0) / 650);
-    const v = from + (cents - from) * (p * p * (3 - 2 * p));
-    capValEl.textContent = `$${(v / 100).toFixed(2)}`;
-    if (p < 1) requestAnimationFrame(tick);
-  };
-  requestAnimationFrame(tick);
+function cancelDemo() {
+  if (!demoActive) return;
+  demoActive = false;
+  for (const t of demoTimers) clearTimeout(t);
+  demoTimers.length = 0;
 }
-el<HTMLButtonElement>("intro-go").addEventListener("click", () => {
-  introDone = true;
-  syncIntro();
-  setChapter(1);
-});
+window.addEventListener("pointerdown", cancelDemo, true);
 
-function updateHint() {
-  if (drawer.classList.contains("open")) {
-    hintEl.hidden = true;
-    return;
-  }
-  let html = "";
-  if (CHAPTERS[chapter] === "inspect" && (!did.rotate || !did.lamp || (splatOn && !did.click))) {
-    const parts: string[] = [];
-    if (!did.rotate) parts.push("drag item to rotate");
-    if (!did.lamp) parts.push("drag the lamp to move light");
-    if (splatOn && !did.click) parts.push("click the object to pin evidence &middot; click a plate to match its angle");
-    html = parts.join(" &middot; ");
-  } else if (!did.nav) {
-    html = "scroll or pick a chapter to move through the world";
-  }
-  hintEl.hidden = !html;
-  if (html) hintEl.innerHTML = html;
-}
+// ---------- world ----------
 
 let world: WorldController | null = null;
 try {
-  world = await WorldController.create(stageEl, spec, condition, reducedMotion, {
+  world = await WorldController.create(stageEl, state.spec, state.condition, reducedMotion, {
     legacy: params.get("gpu") === "0",
     forceWebGL: params.get("gl2") === "1",
     postFx: params.get("fx") !== "0",
@@ -219,43 +193,39 @@ try {
   setTimeout(bootDone, 1600);
 }
 
-const markerBtns: HTMLButtonElement[] = [];
 for (let i = 0; i < 2; i++) {
   const b = document.createElement("button");
   b.className = "marker";
   b.type = "button";
   b.innerHTML = `<span class="dot"></span><span></span>`;
-  const idx = i;
-  b.addEventListener("click", () => selectMarker(idx));
+  b.addEventListener("click", () => selectMarker(i));
   markersEl.appendChild(b);
   markerBtns.push(b);
 }
+
 function markerBindings() {
-  return markerBtns.map((el, i) => ({ el, gated: i > 0 && !evidenceUnlocked }));
+  return markerBtns.map((el, i) => ({ el, gated: i > 0 && !state.evidenceUnlocked }));
 }
+
 world?.setMarkers(markerBindings());
 if (world) {
   world.onLampSettled = (side) => {
-    if (side !== spec.lightSide) {
-      pushUndo();
-      spec = { ...spec, lightSide: side };
-      syncChips();
-      refreshDecision();
+    if (side !== state.spec.lightSide) {
+      commit({ spec: { ...state.spec, lightSide: side }, condition: state.condition }, "ui");
     }
   };
   world.onEvidencePinned = () => {
     did.click = true;
-    updateHint();
     selectMarker(0);
   };
   world.onPlateAlign = () => {
     did.click = true;
-    updateHint();
+    render();
   };
   world.onDrag = (kind) => {
     if (kind === "item") did.rotate = true;
     else did.lamp = true;
-    updateHint();
+    render();
   };
   world.onGavel = () => audio.gavel();
   world.setPodPop?.((i) => audio.tick(i));
@@ -270,88 +240,49 @@ soundBtn.addEventListener("click", () => {
   soundBtn.textContent = on ? "Sound on" : "Muted";
 });
 
-function objectLabel() {
-  return splatOn ? `photo reconstruction (splat), demo` : `demo ${OBJECT_NAMES[spec.object]}`;
+// ---------- state changes ----------
+
+// Every state change goes through here: push undo (if asked), apply to the
+// world when the spec or condition changed, then re-render the UI.
+function commit(next: Snapshot, mode: "spec" | "condition" | "ui", pushUndo = true) {
+  if (pushUndo) {
+    undoStack.push({ spec: state.spec, condition: state.condition });
+    undoBtn.disabled = false;
+  }
+  apply(next, mode);
+  render();
+}
+
+function apply(next: Snapshot, mode: "spec" | "condition" | "ui") {
+  state.spec = next.spec;
+  state.condition = next.condition;
+  if (mode === "spec") {
+    world?.applySpec(state.spec, state.condition);
+    world?.setMarkers(markerBindings());
+  } else if (mode === "condition") {
+    world?.setCondition(state.spec, state.condition);
+  }
 }
 
 function selectMarker(i: number) {
-  selectedMarker = i;
-  if (!evidenceUnlocked) {
-    evidenceUnlocked = true;
+  state.selectedMarker = i;
+  if (!state.evidenceUnlocked) {
+    state.evidenceUnlocked = true;
     world?.unlockEvidence();
   }
   audio.click();
   world?.setEvidenceFocus(i);
-  evTitle.textContent = markerBtns[i].querySelector("span:last-child")?.textContent ?? "evidence";
-  evDetail.textContent = `${objectLabel()} · ${condition} scenario, unverified · simulated evidence, not an observed condition`;
-  evCard.hidden = false;
+  render();
 }
 
-function refreshDecision() {
-  const d = evaluateDecision(spec, condition);
-  verdictEl.textContent = d.eligible ? "Collector stays in" : "Collector walks away";
-  verdictEl.className = `verdict ${d.eligible ? "in" : "out"}`;
-  whyEl.textContent = d.reason;
-  priceEl.textContent = `cap $${(d.limitCents / 100).toFixed(2)} · simulated decision`;
-  setAppraisal(appraisalCents(), d.eligible);
-  tlScene.textContent = spec.title;
-  tlCond.textContent = condition;
-  tlAgent.textContent = d.eligible ? "in" : "out";
-  world?.setSignal(d.eligible);
-  world?.setRationale(d.eligible ? null : d.reason);
-}
-
-function showError(msg: string) {
-  errEl.textContent = msg;
-  errEl.hidden = false;
-}
-
-function pushUndo() {
-  undoStack.push({ spec: { ...spec }, condition });
-  undoBtn.disabled = false;
-}
-
-function restore(specIn: StudioSpec, condIn: StudioCondition) {
-  spec = specIn;
-  condition = condIn;
-  syncChips();
-  world?.applySpec(spec, condition);
-  world?.setMarkers(markerBindings());
-  if (selectedMarker >= 0) selectMarker(selectedMarker);
-  refreshDecision();
-}
-
-function applySpec(next: StudioSpec) {
-  pushUndo();
-  restore(next, next.condition);
-}
-
-function syncChips() {
-  const allowed = CONDS_BY_OBJECT[spec.object];
-  document.querySelectorAll<HTMLButtonElement>("[data-cond]").forEach((b) => {
-    const c = b.dataset.cond as StudioCondition;
-    b.hidden = !allowed.includes(c);
-    b.setAttribute("aria-pressed", String(c === condition));
-  });
-  document.querySelectorAll<HTMLButtonElement>("[data-light]").forEach((b) => {
-    b.setAttribute("aria-pressed", String(b.dataset.light === spec.lightSide));
-  });
-  const ruleOn = spec.object === "cartridge" ? spec.rejectTorn : spec.rejectChip;
-  ruleBtn.setAttribute("aria-pressed", String(ruleOn));
-  ruleBtn.textContent =
-    spec.object === "cartridge" ? "reject if label torn (simulated)" : "reject if chipped (simulated)";
-  provItem.textContent = objectLabel();
-}
-
-function setChapter(i: number) {
-  chapter = i;
-  did.nav = true;
-  if (CHAPTERS[i] !== "discover") introDone = true;
+function goChapter(i: number) {
+  state.chapter = i;
+  if (CHAPTERS[i] !== "discover") state.introDone = true;
   audio.whoosh();
   audio.setChapter(CHAPTERS[i]);
   world?.setChapter(i);
-  syncIntro();
-  updateHint();
+  if (CHAPTERS[i] === "auction") world?.setEvidenceFocus(state.selectedMarker >= 0 ? state.selectedMarker : null);
+  if (CHAPTERS[i] !== "inspect") state.selectedMarker = -1;
   if (!seenChapters.has(i)) {
     seenChapters.add(i);
     if (CHAPTERS[i] === "inspect") {
@@ -359,35 +290,163 @@ function setChapter(i: number) {
     } else if (CHAPTERS[i] === "auction") {
       setTimeout(() => beat("Now the collector decides."), reducedMotion ? 0 : 800);
       setTimeout(() => {
-        const d = evaluateDecision(spec, condition);
+        const d = evaluateDecision(state.spec, state.condition);
         beat(d.eligible ? "The claim holds — this time." : "And the claim doesn't survive.", 3400);
       }, reducedMotion ? 1200 : 4800);
     }
   }
-  if (CHAPTERS[i] === "auction") world?.setEvidenceFocus(selectedMarker >= 0 ? selectedMarker : null);
-  document.querySelectorAll<HTMLButtonElement>("[data-ch]").forEach((b) => {
-    b.setAttribute("aria-pressed", String(Number(b.dataset.ch) === i));
-  });
-  decisionCard.hidden = CHAPTERS[i] !== "auction";
-  appraisalEl.hidden = CHAPTERS[i] === "discover";
-  if (CHAPTERS[i] !== "inspect") {
-    evCard.hidden = true;
-    selectedMarker = -1;
+  render();
+}
+
+// A user-initiated chapter change: also counts as navigation for the hint.
+function userGoChapter(i: number) {
+  did.nav = true;
+  goChapter(i);
+}
+
+function stepChapter(dir: -1 | 1) {
+  const next = Math.min(CHAPTERS.length - 1, Math.max(0, state.chapter + dir));
+  if (next !== state.chapter) userGoChapter(next);
+}
+
+// ---------- rendering ----------
+
+const money = (cents: number) => `$${(cents / 100).toFixed(2)}`;
+const objectLabel = () => (state.splatOn ? "photo reconstruction (splat), demo" : `demo ${OBJECT_NAMES[state.spec.object]}`);
+
+let capShown = -1;
+function setAppraisal(cents: number, eligible: boolean) {
+  capNoteEl.textContent = eligible ? "scenario appraisal — collector's ceiling" : "scenario appraisal — collector walks";
+  if (cents === capShown) return;
+  if (capShown < 0 || reducedMotion) {
+    capShown = cents;
+    capValEl.textContent = money(cents);
+    return;
+  }
+  const from = capShown;
+  capShown = cents;
+  decisionCard.classList.toggle("down", cents < from);
+  decisionCard.classList.toggle("up", cents > from);
+  const t0 = performance.now();
+  const tick = () => {
+    const p = Math.min(1, (performance.now() - t0) / 650);
+    const v = from + (cents - from) * (p * p * (3 - 2 * p));
+    capValEl.textContent = money(v);
+    if (p < 1) requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
+
+// Only send signal/rationale changes to the world when they actually change,
+// so re-renders do not restart pod or gavel animations.
+let lastSignal: boolean | null = null;
+let lastRationale: string | null | undefined;
+
+function renderDecision() {
+  const d = evaluateDecision(state.spec, state.condition);
+  verdictEl.textContent = d.eligible ? "Collector stays in" : "Collector walks away";
+  verdictEl.className = `verdict ${d.eligible ? "in" : "out"}`;
+  whyEl.textContent = d.reason;
+  priceEl.textContent = `cap ${money(d.limitCents)} · simulated decision`;
+  setAppraisal(Math.round(state.spec.maxCents * COND_FACTOR[state.condition]), d.eligible);
+  tlScene.textContent = state.spec.title;
+  tlCond.textContent = state.condition;
+  tlAgent.textContent = d.eligible ? "in" : "out";
+  if (d.eligible !== lastSignal) {
+    lastSignal = d.eligible;
+    world?.setSignal(d.eligible);
+  }
+  const rationale = d.eligible ? null : d.reason;
+  if (rationale !== lastRationale) {
+    lastRationale = rationale;
+    world?.setRationale(rationale);
   }
 }
 
+function syncChips() {
+  const allowed = CONDS_BY_OBJECT[state.spec.object];
+  document.querySelectorAll<HTMLButtonElement>("[data-cond]").forEach((b) => {
+    const c = b.dataset.cond as StudioCondition;
+    b.hidden = !allowed.includes(c);
+    b.setAttribute("aria-pressed", String(c === state.condition));
+  });
+  document.querySelectorAll<HTMLButtonElement>("[data-light]").forEach((b) => {
+    b.setAttribute("aria-pressed", String(b.dataset.light === state.spec.lightSide));
+  });
+  const ruleOn = state.spec.object === "cartridge" ? state.spec.rejectTorn : state.spec.rejectChip;
+  ruleBtn.setAttribute("aria-pressed", String(ruleOn));
+  ruleBtn.textContent = state.spec.object === "cartridge" ? "reject if label torn (simulated)" : "reject if chipped (simulated)";
+  provItem.textContent = objectLabel();
+}
+
+function updateHint() {
+  const text = hintFor({
+    chapter: CHAPTERS[state.chapter],
+    drawerOpen: state.drawer !== null,
+    didRotate: did.rotate,
+    didLamp: did.lamp,
+    didNav: did.nav,
+    splatOn: state.splatOn,
+    didClick: did.click,
+  });
+  hintEl.hidden = !text;
+  hintEl.textContent = text ?? "";
+}
+
+function renderEvidence() {
+  const i = state.selectedMarker;
+  evTitle.textContent = markerBtns[i]?.querySelector("span:last-child")?.textContent ?? "evidence";
+  evDetail.textContent = `${objectLabel()} · ${state.condition} scenario, unverified · simulated evidence, not an observed condition`;
+}
+
+// The one place the DOM is written from state. Safe to call at any time.
+function render() {
+  const ch = CHAPTERS[state.chapter];
+  const focus = focusCard({
+    chapter: ch,
+    introDone: state.introDone,
+    listingDone: state.listingDone,
+    drawerOpen: state.drawer !== null,
+    selectedMarker: state.selectedMarker,
+  });
+  introEl.hidden = focus !== "intro";
+  evCard.hidden = focus !== "evidence";
+  decisionCard.hidden = focus !== "decision";
+  if (focus === "evidence") renderEvidence();
+
+  panelDirect.hidden = state.drawer !== "direct";
+  panelScenario.hidden = state.drawer !== "scenario";
+  drawerEl.classList.toggle("open", state.drawer !== null);
+  el<HTMLButtonElement>("btn-direct").setAttribute("aria-pressed", String(state.drawer === "direct"));
+  el<HTMLButtonElement>("btn-scenario").setAttribute("aria-pressed", String(state.drawer === "scenario"));
+
+  document.querySelectorAll<HTMLButtonElement>("[data-ch]").forEach((b) => {
+    b.setAttribute("aria-pressed", String(Number(b.dataset.ch) === state.chapter));
+  });
+  syncChips();
+  renderDecision();
+  updateHint();
+}
+
+// ---------- DOM events ----------
+
 document.querySelectorAll<HTMLButtonElement>("[data-ch]").forEach((b) => {
-  b.addEventListener("click", () => setChapter(Number(b.dataset.ch)));
+  b.addEventListener("click", () => userGoChapter(Number(b.dataset.ch)));
 });
 
-// Wheel/trackpad advances chapters (scroll as the narrative device); in the
-// Atelier wheel stays on OrbitControls zoom. Cooldown absorbs trackpad inertia.
+el<HTMLButtonElement>("intro-go").addEventListener("click", () => {
+  state.introDone = true;
+  userGoChapter(1);
+});
+
+// Shift + scroll advances chapters. Plain scroll is left alone so the page
+// and the Atelier's OrbitControls zoom behave normally.
 let wheelAcc = 0;
 let wheelLockUntil = 0;
 stageEl.addEventListener(
   "wheel",
   (e) => {
-    if (CHAPTERS[chapter] === "inspect") return;
+    if (!e.shiftKey || CHAPTERS[state.chapter] === "inspect") return;
     e.preventDefault();
     const now = performance.now();
     if (now < wheelLockUntil) return;
@@ -395,34 +454,45 @@ stageEl.addEventListener(
     if (Math.abs(wheelAcc) < 60) return;
     const dir = wheelAcc > 0 ? 1 : -1;
     wheelAcc = 0;
-    const next = Math.min(CHAPTERS.length - 1, Math.max(0, chapter + dir));
-    if (next === chapter) return;
+    const next = Math.min(CHAPTERS.length - 1, Math.max(0, state.chapter + dir));
+    if (next === state.chapter) return;
     wheelLockUntil = now + 750;
-    setChapter(next);
+    did.nav = true;
+    goChapter(next);
   },
   { passive: false },
 );
 
+// Keyboard: arrows move the lamp and turn the item in the Atelier, and change
+// chapter elsewhere. [ and ] change chapter everywhere.
 window.addEventListener("keydown", (e) => {
-  if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+  cancelDemo();
+  if (e.altKey || e.ctrlKey || e.metaKey) return;
   const t = e.target as HTMLElement;
   if (t.tagName === "TEXTAREA" || t.tagName === "INPUT") return;
-  const next = Math.min(CHAPTERS.length - 1, Math.max(0, chapter + (e.key === "ArrowRight" ? 1 : -1)));
-  if (next !== chapter) setChapter(next);
+  if (e.key === "[") return stepChapter(-1);
+  if (e.key === "]") return stepChapter(1);
+  if (CHAPTERS[state.chapter] === "inspect") {
+    if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+      e.preventDefault();
+      world?.nudgeLampBy((e.key === "ArrowRight" ? 1 : -1) * LAMP_STEP);
+      return;
+    }
+    if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+      e.preventDefault();
+      world?.rotateItemBy((e.key === "ArrowUp" ? 1 : -1) * ITEM_STEP);
+      return;
+    }
+  }
+  if (e.key === "ArrowRight") stepChapter(1);
+  if (e.key === "ArrowLeft") stepChapter(-1);
 });
 
-el<HTMLButtonElement>("btn-reset").addEventListener("click", () => setChapter(chapter));
+el<HTMLButtonElement>("btn-reset").addEventListener("click", () => userGoChapter(state.chapter));
 
 function toggleDrawer(which: "direct" | "scenario") {
-  const showDirect = which === "direct" && panelDirect.hidden;
-  const showScenario = which === "scenario" && panelScenario.hidden;
-  panelDirect.hidden = !showDirect;
-  panelScenario.hidden = !showScenario;
-  drawer.classList.toggle("open", showDirect || showScenario);
-  el<HTMLButtonElement>("btn-direct").setAttribute("aria-pressed", String(showDirect));
-  el<HTMLButtonElement>("btn-scenario").setAttribute("aria-pressed", String(showScenario));
-  syncIntro();
-  updateHint();
+  state.drawer = state.drawer === which ? null : which;
+  render();
 }
 
 el<HTMLButtonElement>("btn-direct").addEventListener("click", () => toggleDrawer("direct"));
@@ -430,47 +500,36 @@ el<HTMLButtonElement>("btn-scenario").addEventListener("click", () => toggleDraw
 
 document.querySelectorAll<HTMLButtonElement>("[data-cond]").forEach((b) => {
   b.addEventListener("click", () => {
-    pushUndo();
-    condition = b.dataset.cond as StudioCondition;
-    syncChips();
-    world?.setCondition(spec, condition);
-    if (selectedMarker >= 0) selectMarker(selectedMarker);
-    refreshDecision();
+    commit({ spec: state.spec, condition: b.dataset.cond as StudioCondition }, "condition");
   });
 });
 document.querySelectorAll<HTMLButtonElement>("[data-light]").forEach((b) => {
   b.addEventListener("click", () => {
-    pushUndo();
-    spec = { ...spec, lightSide: b.dataset.light as StudioSpec["lightSide"] };
-    syncChips();
-    world?.applySpec(spec, condition);
-    refreshDecision();
+    commit({ spec: { ...state.spec, lightSide: b.dataset.light as StudioSpec["lightSide"] }, condition: state.condition }, "spec");
   });
 });
 
 ruleBtn.addEventListener("click", () => {
-  pushUndo();
-  spec =
-    spec.object === "cartridge"
-      ? { ...spec, rejectTorn: !spec.rejectTorn }
-      : { ...spec, rejectChip: !spec.rejectChip };
-  syncChips();
-  refreshDecision();
+  const spec: StudioSpec =
+    state.spec.object === "cartridge"
+      ? { ...state.spec, rejectTorn: !state.spec.rejectTorn }
+      : { ...state.spec, rejectChip: !state.spec.rejectChip };
+  commit({ spec, condition: state.condition }, "ui");
 });
-
-const sourcePhotos: string[] = [];
 
 function renderPhotos() {
   photoList.innerHTML = "";
-  for (const url of sourcePhotos) {
+  for (const url of state.sourcePhotos) {
     const img = document.createElement("img");
     img.src = url;
     img.alt = "uploaded source photo, unverified";
     photoList.appendChild(img);
   }
-  photoClear.hidden = sourcePhotos.length === 0;
+  photoClear.hidden = state.sourcePhotos.length === 0;
   provPhotos.textContent =
-    sourcePhotos.length === 0 ? "no source photos" : `${sourcePhotos.length} source photo${sourcePhotos.length > 1 ? "s" : ""}, unverified`;
+    state.sourcePhotos.length === 0
+      ? "no source photos"
+      : `${state.sourcePhotos.length} source photo${state.sourcePhotos.length > 1 ? "s" : ""}, unverified`;
 }
 
 function photoError(msg: string) {
@@ -480,7 +539,7 @@ function photoError(msg: string) {
 
 if (photoInput && photoClear && photoList) {
   photoInput.addEventListener("change", async () => {
-    const files = Array.from(photoInput.files ?? []).slice(0, Math.max(0, 4 - sourcePhotos.length));
+    const files = Array.from(photoInput.files ?? []).slice(0, Math.max(0, 4 - state.sourcePhotos.length));
     photoInput.value = "";
     photoErr.hidden = true;
     for (const file of files) {
@@ -499,18 +558,18 @@ if (photoInput && photoClear && photoList) {
           photoError(`"${file.name}": ${data.error ?? `upload failed (${res.status})`}`);
           continue;
         }
-        sourcePhotos.push(data.url);
+        state.sourcePhotos.push(data.url);
       } catch {
         photoError(`"${file.name}": upload failed (network).`);
       }
     }
     renderPhotos();
-    world?.setSourcePhotos(sourcePhotos);
-    if (sourcePhotos.length > 0) audio.slide();
+    world?.setSourcePhotos(state.sourcePhotos);
+    if (state.sourcePhotos.length > 0) audio.slide();
   });
 
   photoClear.addEventListener("click", () => {
-    sourcePhotos.length = 0;
+    state.sourcePhotos.length = 0;
     photoErr.hidden = true;
     renderPhotos();
     world?.setSourcePhotos([]);
@@ -519,14 +578,15 @@ if (photoInput && photoClear && photoList) {
 
 el<HTMLButtonElement>("load-sample").addEventListener("click", () => {
   errEl.hidden = true;
-  applySpec({ ...SAMPLE_SPEC });
+  commit({ spec: { ...SAMPLE_SPEC }, condition: SAMPLE_SPEC.condition }, "spec");
 });
 
 undoBtn.addEventListener("click", () => {
   const prev = undoStack.pop();
   if (!prev) return;
-  restore(prev.spec, prev.condition);
+  apply(prev, "spec");
   undoBtn.disabled = undoStack.length === 0;
+  render();
 });
 
 el<HTMLFormElement>("director-form").addEventListener("submit", async (e) => {
@@ -539,7 +599,7 @@ el<HTMLFormElement>("director-form").addEventListener("submit", async (e) => {
     const res = await fetch("/api/studio/preview", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ instruction, previous: spec }),
+      body: JSON.stringify({ instruction, previous: state.spec }),
     });
     const data = (await res.json()) as { spec?: unknown; error?: string };
     if (!res.ok) {
@@ -553,7 +613,7 @@ el<HTMLFormElement>("director-form").addEventListener("submit", async (e) => {
       showError("Model returned an unusable scene spec; the current scene is unchanged.");
       return;
     }
-    applySpec(next);
+    commit({ spec: next, condition: next.condition }, "spec");
   } catch {
     showError("Network error reaching the scene model; the current scene is unchanged.");
   } finally {
@@ -561,15 +621,21 @@ el<HTMLFormElement>("director-form").addEventListener("submit", async (e) => {
   }
 });
 
-const chIdx = (CHAPTERS as readonly string[]).indexOf(params.get("ch") ?? "");
+function showError(msg: string) {
+  errEl.textContent = msg;
+  errEl.hidden = false;
+}
+
+// ---------- boot ----------
+
 syncChips();
-setChapter(chIdx >= 0 ? chIdx : 0);
-refreshDecision();
+const chIdx = (CHAPTERS as readonly string[]).indexOf(params.get("ch") ?? "");
+goChapter(chIdx >= 0 ? chIdx : 0);
 const evIdx = Number.parseInt(params.get("ev") ?? "", 10);
 if (Number.isInteger(evIdx) && evIdx >= 0 && evIdx < markerBtns.length) {
   world?.setEvidenceFocus(evIdx);
 }
-updateHint();
+render();
 
 const envUrl = params.get("env");
 if (envUrl && world) {
@@ -579,18 +645,14 @@ if (envUrl && world) {
 const splatUrl = params.get("splat");
 if (splatUrl && world) {
   world.attachSplat(splatUrl).then((ok) => {
-    if (ok) {
-      splatOn = true;
-      const badge = el<HTMLElement>("prov-badge");
-      const credit = params.get("credit");
-      badge.textContent = credit ? `photo reconstruction · ${credit}` : "photo reconstruction";
-      syncChips();
-      updateHint();
-    }
+    if (!ok) return;
+    state.splatOn = true;
+    const credit = params.get("credit");
+    provBadge.textContent = credit ? `photo reconstruction · ${credit}` : "photo reconstruction";
+    render();
   });
 }
 
-syncIntro();
 if (world) {
   bootStep(100, "entering the racks");
   setTimeout(bootDone, 350);
@@ -607,44 +669,48 @@ function spinItem(speed: number, ms: number) {
   };
   requestAnimationFrame(tick);
 }
+
 function demoBeats() {
   const steps: [number, () => void][] = [
-    [400, () => setChapter(1)],
+    [400, () => goChapter(1)],
     [2600, () => world?.nudgeLamp(RAKING_THETA.left, 1500)],
     [4300, () => spinItem(0.5, 1800)],
     [6400, () => selectMarker(0)],
     [8000, () => document.querySelector<HTMLButtonElement>('[data-cond="torn"]')?.click()],
-    [9200, () => {
-      if (ruleBtn.getAttribute("aria-pressed") !== "true") ruleBtn.click();
-    }],
-    [10800, () => setChapter(2)],
+    [
+      9200,
+      () => {
+        if (ruleBtn.getAttribute("aria-pressed") !== "true") ruleBtn.click();
+      },
+    ],
+    [10800, () => goChapter(2)],
     [
       24000,
       () => {
         if (params.get("loop") === "0") return;
-        setChapter(0);
-        setTimeout(demoBeats, 4200);
+        goChapter(0);
+        demoAfter(demoBeats, 4200);
       },
     ],
   ];
-  for (const [dt, fn] of steps) setTimeout(fn, dt);
+  for (const [dt, fn] of steps) demoAfter(fn, dt);
 }
+
 if (params.get("demo") === "1" && world) {
-  if (!listingDone) {
+  if (!state.listingDone) {
     typeListing();
-    setTimeout(enterWorld, 3400);
-    setTimeout(demoBeats, 5600);
+    demoAfter(enterWorld, 3400);
+    demoAfter(demoBeats, 5600);
   } else {
-    setTimeout(demoBeats, 1200);
+    demoAfter(demoBeats, 1200);
   }
 }
 
 if (params.has("debug") && world) {
-  const diag = el<HTMLDivElement>("diag");
-  diag.hidden = false;
+  diagEl.hidden = false;
   setInterval(() => {
     const d = world?.diagnostics();
     if (!d) return;
-    diag.textContent = `gpu   ${d.backend}\ncalls ${d.calls}\ntris  ${d.triangles}\ngeo   ${d.geometries}\ntex   ${d.textures}\nprogs ${d.programs}\ndpr   ${d.dpr}`;
+    diagEl.textContent = `gpu   ${d.backend}\ncalls ${d.calls}\ntris  ${d.triangles}\ngeo   ${d.geometries}\ntex   ${d.textures}\nprogs ${d.programs}\ndpr   ${d.dpr}`;
   }, 500);
 }

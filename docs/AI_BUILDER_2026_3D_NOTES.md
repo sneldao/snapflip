@@ -373,6 +373,39 @@ physical-object shot. No fake live money; no prerecorded AI answer passed
 off as a live judge demo. Website demo offers a self-serve 1-click sample
 plus a new-prompt field. No paste-ready submission text is authored here.
 
+## UX pass (Oct 12) — what changed and what is still open
+
+Implemented from a code-level review (not browser-verified):
+
+- One focal card per chapter (`focusCard` in `src/studio/ux.ts`); appraisal
+  folded into the decision card; mobile uses one card slot.
+- One instruction at a time in the gesture hint (`hintFor`), as text in a
+  live region.
+- Hover feedback in the Atelier: grab cursor on the lamp head and item, and a
+  halo on the lamp head (`setHover` in `chapters.ts`).
+- Keyboard in the Atelier: ← → move the lamp, ↑ ↓ turn the item, [ ] change
+  chapter. Elsewhere ← → still change chapter.
+- Wheel changes chapter only with Shift held; plain scroll is untouched.
+- `touch-action: none` on the canvas so touch drags reach the lamp and item.
+  Not yet confirmed on a device.
+- Demo autopilot timers are tracked and cancelled on any real pointer or key
+  input.
+- Minimum HUD text size is 12px.
+- `client.ts` is one state object with a single `render()`; undo stores
+  snapshots.
+- Marker projection and occlusion moved to `world/markers.ts` (occlusion
+  refreshed every third frame or when dirty). WebGPU post chain moved to
+  `world/postfx.ts`.
+- Fixed: after pinning evidence, the marker stayed on the old anchor.
+
+Still open:
+
+- Pointer and drag handling is still inside `WorldController.ts`. Split it out
+  only after a live drag check.
+- Hero asset (Phase 7) is blocked on consented multi-angle photo sets and an
+  asset-rights and cost decision.
+- Hover, keyboard, touch, and demo timing have not been checked in a browser.
+
 ## Risks and caveats
 
 - Registration: registered (user confirmed Oct 11); team/focus category still

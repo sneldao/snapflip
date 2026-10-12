@@ -224,6 +224,7 @@ export interface ChapterBuild {
   setSignal?(on: boolean): void;
   setRakingSide?(side: "left" | "right"): void;
   setLampTheta?(theta: number): void;
+  setHover?(on: boolean): void;
   lampDragTarget?: THREE.Object3D;
   lampHead?: THREE.Object3D;
   update?(nowMs: number): void;
@@ -524,6 +525,14 @@ export function buildAtelier(): ChapterBuild {
   const headHit = new THREE.Mesh(new THREE.SphereGeometry(0.24, 10, 10));
   headHit.visible = false;
   headG.add(headHit);
+  // Hover halo: shows the lamp head is grabbable.
+  const halo = new THREE.Mesh(
+    new THREE.SphereGeometry(0.2, 16, 12),
+    new THREE.MeshBasicMaterial({ color: 0xf5c987, transparent: true, opacity: 0.2, blending: THREE.AdditiveBlending, depthWrite: false }),
+  );
+  halo.visible = false;
+  halo.renderOrder = 6;
+  headG.add(halo);
   const beam = new THREE.Mesh(
     new THREE.ConeGeometry(0.5, 1.15, 20, 1, true),
     new THREE.MeshBasicMaterial({ map: coneGradient(), transparent: true, opacity: 0.16, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }),
@@ -628,6 +637,9 @@ export function buildAtelier(): ChapterBuild {
     plateTargets: plateCards,
     setLampTheta(theta) {
       placeLamp(theta);
+    },
+    setHover(on) {
+      halo.visible = on;
     },
     setRakingSide(side) {
       placeLamp(RAKING_THETA[side]);

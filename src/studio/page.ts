@@ -19,14 +19,16 @@ export function studioPage(aiEnabled: boolean) {
         --porcelain: #ece4d4;
         --porcelain-dim: #b9ae97;
         --charcoal: #141114;
-        --panel: rgba(20, 17, 20, 0.86);
-        --line: #332d31;
+        --panel: rgba(20, 17, 20, 0.9);
+        --line: #3d363b;
         --amber: #e8a34c;
         --amber-hi: #f5c987;
         --red: #d9644a;
         --ok: #8fb98a;
         --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
         --mono: "SF Mono", ui-monospace, "Cascadia Mono", Menlo, monospace;
+        /* Minimum readable size for any text in the HUD. */
+        --min-text: 0.75rem;
       }
       * { box-sizing: border-box; }
       html, body { margin: 0; height: 100%; overflow: hidden; background: var(--charcoal); color: var(--porcelain); font-family: var(--serif); }
@@ -35,89 +37,86 @@ export function studioPage(aiEnabled: boolean) {
       #stage canvas { display: block; }
       .topbar { position: fixed; top: 12px; left: 12px; z-index: 10; max-width: min(78vw, 420px);
                 background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; }
-      .topbar h1 { margin: 0; font-size: 0.95rem; font-weight: 600; letter-spacing: 0.02em; }
-      .topbar .sub { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--porcelain-dim); margin-top: 3px; overflow-wrap: anywhere; }
-      .badges { display: flex; gap: 6px; margin-top: 7px; flex-wrap: wrap; }
-      .badge { font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.14em; text-transform: uppercase; overflow: hidden; text-overflow: ellipsis;
-               border: 1px solid var(--line); border-radius: 999px; padding: 2px 9px; color: var(--porcelain-dim); max-width: 100%; }
+      .topbar h1 { margin: 0; font-size: 1rem; font-weight: 600; letter-spacing: 0.02em; }
+      .topbar .sub { font-family: var(--mono); font-size: var(--min-text); letter-spacing: 0.06em; color: var(--porcelain-dim); margin-top: 4px; overflow-wrap: anywhere; }
+      .badges { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+      .badge { font-family: var(--mono); font-size: var(--min-text); letter-spacing: 0.06em; overflow: hidden; text-overflow: ellipsis;
+               border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; color: var(--porcelain-dim); max-width: 100%; }
       .badge.sim { border-color: var(--amber); color: var(--amber); }
-      .topbar .status { font-family: var(--mono); font-size: 0.6rem; color: var(--porcelain-dim); margin-top: 7px; }
+      .topbar .status { font-family: var(--mono); font-size: var(--min-text); color: var(--porcelain-dim); margin-top: 8px; }
       .topbar .status b { color: var(--amber-hi); font-weight: 400; }
       .nav { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 10;
              display: flex; gap: 8px; align-items: center; background: var(--panel); border: 1px solid var(--line);
              border-radius: 999px; padding: 7px 10px; max-width: calc(100vw - 16px); flex-wrap: wrap; justify-content: center; }
       .nav button { border: 1px solid var(--line); background: transparent; color: var(--porcelain-dim); border-radius: 999px;
-                    padding: 7px 14px; font-family: var(--mono); font-size: 0.66rem; letter-spacing: 0.1em; text-transform: uppercase; white-space: nowrap; }
+                    padding: 8px 14px; font-family: var(--mono); font-size: var(--min-text); letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; }
       .nav button[aria-pressed="true"] { border-color: var(--amber); color: var(--amber-hi); }
       .nav button:focus-visible, .drawer button:focus-visible, .card button:focus-visible, .marker:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
       .nav .sep { width: 1px; height: 18px; background: var(--line); }
-      .card { position: fixed; z-index: 9; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; max-width: 320px; }
-      .card .who { font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--porcelain-dim); }
-      .card .verdict { font-size: 0.98rem; margin: 3px 0; }
+      .card { position: fixed; z-index: 9; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; max-width: 320px; border-left: 3px solid var(--amber); }
+      .card .who { font-family: var(--mono); font-size: var(--min-text); letter-spacing: 0.04em; color: var(--porcelain-dim); }
+      .card .verdict { font-size: 1rem; margin: 4px 0; }
       .card .verdict.in { color: var(--ok); }
       .card .verdict.out { color: var(--red); }
-      .card .why { font-size: 0.74rem; color: var(--porcelain-dim); line-height: 1.4; overflow-wrap: anywhere; }
-      .card .price { font-family: var(--mono); font-size: 0.7rem; color: var(--amber-hi); margin-top: 4px; }
-      #decision { top: 12px; right: 12px; border-left: 3px solid var(--amber); }
-      #evidence-card { top: 50%; right: 12px; transform: translateY(-50%); border-left: 3px solid var(--ok); }
+      .card .why { font-size: 0.8rem; color: var(--porcelain-dim); line-height: 1.45; overflow-wrap: anywhere; }
+      .card .price { font-family: var(--mono); font-size: var(--min-text); color: var(--amber-hi); margin-top: 6px; }
+      .appraisal { display: flex; align-items: baseline; gap: 10px; margin-top: 8px; flex-wrap: wrap; }
+      #cap-val { font-family: var(--mono); font-size: 1.1rem; color: var(--amber-hi); }
+      #cap-note { font-family: var(--mono); font-size: var(--min-text); color: var(--porcelain-dim); }
+      #decision { top: 12px; right: 12px; }
+      #decision.down { border-left-color: var(--red); }
+      #decision.up { border-left-color: var(--ok); }
+      #evidence-card { top: 50%; right: 12px; transform: translateY(-50%); border-left-color: var(--ok); }
+      #intro { top: 50%; right: 12px; transform: translateY(-50%); }
+      #intro .cta { margin-top: 10px; }
       .markers { position: fixed; inset: 0; pointer-events: none; z-index: 5; }
       .marker { position: absolute; transform: translate(-50%, -120%); pointer-events: auto;
-                font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.04em;
+                font-family: var(--mono); font-size: var(--min-text); letter-spacing: 0.02em;
                 background: var(--panel); border: 1px solid var(--amber); color: var(--amber-hi);
-                border-radius: 5px; padding: 4px 8px; max-width: 46vw; overflow: hidden; text-overflow: ellipsis; }
-      .marker .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--amber); margin-right: 6px; vertical-align: 1px; }
+                border-radius: 6px; padding: 5px 9px; max-width: 46vw; overflow: hidden; text-overflow: ellipsis; }
+      .marker .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--amber); margin-right: 6px; vertical-align: 1px; }
       #webgl-fallback { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 4; display: none;
                         background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px;
-                        font-size: 0.78rem; color: var(--porcelain-dim); max-width: min(92vw, 480px); text-align: center; }
+                        font-size: 0.8rem; color: var(--porcelain-dim); max-width: min(92vw, 480px); text-align: center; }
       .drawer { position: fixed; left: 50%; bottom: 64px; transform: translateX(-50%); z-index: 11; width: min(560px, calc(100vw - 16px));
                 background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px; display: none; }
       .drawer.open { display: block; }
       .drawer textarea { width: 100%; min-height: 84px; resize: vertical; background: #1c181c; color: var(--porcelain);
-                         border: 1px solid var(--line); border-radius: 8px; padding: 10px; font-family: var(--serif); font-size: 0.85rem; line-height: 1.45; }
+                         border: 1px solid var(--line); border-radius: 8px; padding: 10px; font-family: var(--serif); font-size: 0.9rem; line-height: 1.45; }
       .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-      .btn { border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--porcelain); padding: 7px 14px; font-size: 0.78rem; }
+      .btn { border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--porcelain); padding: 8px 14px; font-size: 0.85rem; }
       .btn.primary { background: var(--amber); border-color: var(--amber); color: #1b1206; font-weight: 600; }
       .btn:disabled { opacity: 0.45; cursor: default; }
-      .hint { font-size: 0.72rem; color: var(--porcelain-dim); line-height: 1.5; overflow-wrap: anywhere; margin: 8px 0 0; }
-      .hint code { font-family: var(--mono); font-size: 0.66rem; color: var(--amber-hi); overflow-wrap: anywhere; }
-      .err { border: 1px solid var(--red); color: var(--red); border-radius: 6px; padding: 8px 10px; font-size: 0.74rem; overflow-wrap: anywhere; margin-top: 8px; }
-      .lbl { font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--porcelain-dim); margin: 12px 0 6px; }
+      .hint { font-size: 0.8rem; color: var(--porcelain-dim); line-height: 1.5; overflow-wrap: anywhere; margin: 8px 0 0; }
+      .hint code { font-family: var(--mono); font-size: var(--min-text); color: var(--amber-hi); overflow-wrap: anywhere; }
+      .err { border: 1px solid var(--red); color: var(--red); border-radius: 6px; padding: 8px 10px; font-size: 0.8rem; overflow-wrap: anywhere; margin-top: 8px; }
+      .lbl { font-family: var(--mono); font-size: var(--min-text); letter-spacing: 0.06em; text-transform: uppercase; color: var(--porcelain-dim); margin: 12px 0 6px; }
       .chip { border: 1px solid var(--line); background: transparent; color: var(--porcelain-dim); border-radius: 999px;
-              padding: 5px 12px; font-family: var(--mono); font-size: 0.64rem; letter-spacing: 0.08em; text-transform: uppercase; }
+              padding: 6px 12px; font-family: var(--mono); font-size: var(--min-text); letter-spacing: 0.04em; text-transform: uppercase; }
       .chip[aria-pressed="true"] { border-color: var(--amber); color: var(--amber-hi); }
-      #photo-input { font-family: var(--mono); font-size: 0.64rem; color: var(--porcelain-dim); max-width: 100%; }
+      #photo-input { font-family: var(--mono); font-size: var(--min-text); color: var(--porcelain-dim); max-width: 100%; }
       .thumbs img { width: 44px; height: 44px; object-fit: cover; border-radius: 6px; border: 1px solid var(--line); }
-      #diag { position: fixed; left: 12px; bottom: 64px; z-index: 8; background: var(--panel); border: 1px solid var(--line);
-              border-radius: 8px; padding: 8px 10px; font-family: var(--mono); font-size: 0.6rem; color: var(--porcelain-dim);
-              letter-spacing: 0.04em; line-height: 1.7; white-space: pre; }
+      #diag { position: fixed; left: 12px; bottom: 150px; z-index: 8; background: var(--panel); border: 1px solid var(--line);
+              border-radius: 8px; padding: 8px 10px; font-family: var(--mono); font-size: var(--min-text); color: var(--porcelain-dim);
+              letter-spacing: 0.02em; line-height: 1.7; white-space: pre; }
       #gesture-hint { position: fixed; left: 50%; bottom: 112px; transform: translateX(-50%); z-index: 9;
-                      background: var(--panel); border: 1px solid var(--amber); border-radius: 999px; padding: 7px 16px;
-                      font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.08em; color: var(--amber-hi);
-                      white-space: nowrap; max-width: calc(100vw - 24px); overflow: hidden; text-overflow: ellipsis;
-                      transition: opacity 0.6s ease; }
-      #gesture-hint .done { color: var(--porcelain-dim); text-decoration: line-through; }
-      #gesture-hint.fade { opacity: 0; pointer-events: none; }
+                      background: var(--panel); border: 1px solid var(--amber); border-radius: 999px; padding: 8px 16px;
+                      font-family: var(--mono); font-size: var(--min-text); letter-spacing: 0.02em; color: var(--amber-hi);
+                      white-space: nowrap; max-width: calc(100vw - 24px); overflow: hidden; text-overflow: ellipsis; }
       #boot { position: fixed; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center;
               background: var(--charcoal); transition: opacity 0.7s ease; }
       #boot.done { opacity: 0; pointer-events: none; }
       #boot .inner { text-align: center; max-width: min(80vw, 360px); }
       #boot .mark { font-size: 1.5rem; letter-spacing: 0.02em; }
       #boot .mark b { color: var(--amber-hi); font-weight: 600; }
-      #boot .tag { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.22em; text-transform: uppercase;
+      #boot .tag { font-family: var(--mono); font-size: var(--min-text); letter-spacing: 0.12em; text-transform: uppercase;
                    color: var(--porcelain-dim); margin-top: 6px; }
       #boot .bar { height: 2px; background: var(--line); border-radius: 2px; margin: 18px 0 10px; overflow: hidden; }
       #boot .bar span { display: block; height: 100%; width: 5%; background: var(--amber);
                         border-radius: 2px; transition: width 0.5s ease; }
-      #boot .line { font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.14em; text-transform: uppercase;
+      #boot .line { font-family: var(--mono); font-size: var(--min-text); letter-spacing: 0.08em; text-transform: uppercase;
                     color: var(--porcelain-dim); }
       #boot .line.err { color: var(--red); text-transform: none; }
-      #intro { top: 50%; right: 12px; transform: translateY(-50%); border-left: 3px solid var(--amber); }
-      #intro .cta { margin-top: 9px; }
-      #appraisal { left: 12px; bottom: 64px; border-left: 3px solid var(--amber); }
-      #appraisal .verdict { font-family: var(--mono); font-size: 1.05rem; }
-      #appraisal.down { border-left-color: var(--red); }
-      #appraisal.up { border-left-color: var(--ok); }
-      #diag { bottom: 150px; }
       #listing { position: fixed; inset: 0; z-index: 45; background: #e9e7e2; color: #2a2a2a;
                  display: flex; align-items: center; justify-content: center; padding: 16px;
                  font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -125,45 +124,43 @@ export function studioPage(aiEnabled: boolean) {
       #listing.lift { opacity: 0; transform: scale(0.94) translateY(-20px); pointer-events: none; }
       #listing .sheet { width: min(92vw, 640px); background: #fff; border: 1px solid #d8d5cf; border-radius: 4px;
                         box-shadow: 0 2px 10px rgba(0, 0, 0, 0.14); padding: 18px 20px; }
-      #listing .site { font-size: 10px; letter-spacing: 0.22em; text-transform: uppercase; color: #9a958c; margin-bottom: 14px; }
+      #listing .site { font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase; color: #8a857c; margin-bottom: 14px; }
       #listing .rowx { display: flex; gap: 16px; }
       #listing .photo { width: 170px; min-width: 170px; height: 170px; border: 1px solid #ddd;
                         background: repeating-linear-gradient(45deg, #ededeb, #ededeb 9px, #f6f6f4 9px, #f6f6f4 18px);
                         display: flex; align-items: center; justify-content: center; text-align: center;
-                        color: #a9a49a; font-size: 10px; line-height: 1.6; letter-spacing: 0.12em; text-transform: uppercase; }
+                        color: #8a857c; font-size: 12px; line-height: 1.6; letter-spacing: 0.08em; text-transform: uppercase; }
       #listing h2 { margin: 0 0 4px; font-size: 17px; font-weight: 600; color: #222; }
-      #listing .cond { font-size: 12px; color: #555; }
+      #listing .cond { font-size: 13px; color: #555; }
       #listing .cond b { color: #1a7a33; }
       #listing .price { font-size: 20px; font-weight: 700; color: #222; margin: 8px 0 2px; }
-      #listing .seller { font-size: 11px; color: #9a958c; margin-top: 8px; line-height: 1.6; }
+      #listing .seller { font-size: 12px; color: #8a857c; margin-top: 8px; line-height: 1.6; }
       #listing .prompt-line { margin-top: 16px; border-top: 1px dashed #ddd; padding-top: 14px; }
-      #listing .prompt-text { font-family: "SF Mono", ui-monospace, Menlo, monospace; font-size: 11.5px; line-height: 1.6;
+      #listing .prompt-text { font-family: "SF Mono", ui-monospace, Menlo, monospace; font-size: 12px; line-height: 1.6;
                               background: #f6f3ea; border: 1px solid #e2dbc6; border-radius: 3px; color: #6b5a2e;
                               padding: 9px 11px; min-height: 34px; }
       #listing .actions { margin-top: 10px; display: flex; align-items: center; gap: 10px; }
-      #listing .go { background: #141114; color: #f5c987; border: 0; padding: 9px 18px; font-size: 11px;
-                     letter-spacing: 0.12em; text-transform: uppercase; cursor: pointer; border-radius: 3px; font-family: inherit; }
-      #listing .skip { background: none; border: 0; padding: 0; font-size: 11px; color: #9a958c;
+      #listing .go { background: #141114; color: #f5c987; border: 0; padding: 10px 18px; font-size: 12px;
+                     letter-spacing: 0.1em; text-transform: uppercase; cursor: pointer; border-radius: 3px; font-family: inherit; }
+      #listing .skip { background: none; border: 0; padding: 0; font-size: 12px; color: #7d786f;
                        text-decoration: underline; cursor: pointer; font-family: inherit; }
-      #listing .fineprint { font-size: 10px; color: #b3aea4; margin-top: 12px; line-height: 1.6; }
+      #listing .fineprint { font-size: 12px; color: #7d786f; margin-top: 12px; line-height: 1.6; }
       #beat { position: fixed; left: 50%; bottom: 23%; transform: translateX(-50%) translateY(8px); z-index: 12;
               max-width: min(88vw, 560px); text-align: center; pointer-events: none;
-              font-style: italic; font-size: 1.08rem; letter-spacing: 0.01em; color: var(--porcelain);
+              font-style: italic; font-size: 1.1rem; letter-spacing: 0.01em; color: var(--porcelain);
               text-shadow: 0 2px 14px rgba(0, 0, 0, 0.85), 0 0 40px rgba(0, 0, 0, 0.6);
               opacity: 0; transition: opacity 0.8s ease, transform 0.8s ease; }
       #beat.show { opacity: 1; transform: translateX(-50%) translateY(0); }
       @media (max-width: 860px) {
-        .badge { font-size: 0.54rem; white-space: normal; overflow-wrap: anywhere; text-align: center; }
+        .badge { white-space: normal; overflow-wrap: anywhere; text-align: center; }
         .topbar { max-width: calc(100vw - 24px); padding: 8px 12px; }
         .card { max-width: calc(100vw - 24px); }
-        #decision { top: auto; bottom: 122px; right: 12px; left: 12px; max-width: none; }
-        #evidence-card { top: auto; bottom: 122px; right: 12px; left: 12px; max-width: none; transform: none; }
-        #intro { top: auto; bottom: 122px; right: 12px; left: 12px; max-width: none; transform: none; }
-        #appraisal { bottom: 122px; }
+        /* Only one card is ever shown, so all cards share one mobile slot. */
+        #decision, #evidence-card, #intro { top: auto; bottom: 122px; right: 12px; left: 12px; max-width: none; transform: none; }
         #listing .rowx { flex-direction: column; }
         #listing .photo { width: 100%; height: 110px; min-width: 0; }
         .nav { bottom: 10px; padding: 6px 8px; gap: 6px; }
-        .nav button { padding: 7px 11px; }
+        .nav button { padding: 8px 11px; }
         .drawer { bottom: 60px; }
         #gesture-hint { bottom: 178px; }
       }
@@ -198,6 +195,7 @@ export function studioPage(aiEnabled: boolean) {
       <div class="who">MARA &middot; simulated collector &middot; scenario, unverified</div>
       <div class="verdict" id="verdict">—</div>
       <div class="why" id="why"></div>
+      <div class="appraisal"><span id="cap-val">$0.00</span><span id="cap-note">scenario appraisal — collector's ceiling</span></div>
       <div class="price" id="price"></div>
     </div>
 
@@ -212,12 +210,6 @@ export function studioPage(aiEnabled: boolean) {
       <div class="verdict">A worn cartridge, tagged and waiting.</div>
       <div class="why">Take it to the inspection table to check its evidence — then watch a simulated collector decide, and walk if the rules say so.</div>
       <div class="cta"><button type="button" class="btn primary" id="intro-go">Take it to inspection</button></div>
-    </div>
-
-    <div class="card" id="appraisal" hidden>
-      <div class="who">simulated appraisal &middot; unverified</div>
-      <div class="verdict" id="cap-val">$0.00</div>
-      <div class="why" id="cap-note">scenario appraisal &mdash; collector&rsquo;s ceiling</div>
     </div>
 
     <div id="listing" hidden>
@@ -257,7 +249,7 @@ export function studioPage(aiEnabled: boolean) {
       <button type="button" id="btn-sound" aria-pressed="true">Sound on</button>
     </nav>
 
-    <div id="gesture-hint" hidden></div>
+    <div id="gesture-hint" role="status" aria-live="polite" hidden></div>
 
     <div class="drawer" id="drawer">
       <div id="panel-direct" hidden>
@@ -292,6 +284,7 @@ export function studioPage(aiEnabled: boolean) {
           <button type="button" class="chip" data-light="left">left</button>
           <button type="button" class="chip" data-light="right" aria-pressed="true">right</button>
         </div>
+        <p class="hint">Keyboard in the Atelier: <code>← →</code> move the lamp &middot; <code>↑ ↓</code> turn the item &middot; <code>[ ]</code> change chapter.</p>
         ${aiEnabled
           ? html`
         <div class="lbl">Source photos &middot; demo uploads, unverified</div>
