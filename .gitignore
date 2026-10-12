@@ -1,6 +1,8 @@
 node_modules/
 .wrangler/
 dist/
+/public/studio.js
+/public/app/
 .dev.vars
 .dev.vars.*
 !.dev.vars.example

@@ -13,5 +13,6 @@
     "jsx": "react-jsx",
     "jsxImportSource": "hono/jsx"
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "fixtures/*.json"]
+  "include": ["src/**/*.ts", "src/**/*.tsx", "fixtures/*.json"],
+  "exclude": ["src/studio/client.ts", "src/studio/audio.ts", "src/studio/world"]
 }

@@ -8,6 +8,7 @@ import { orders } from "./orders";
 import { payments, voidExpiredAuths } from "./payments";
 import { checkMarketWatches } from "./pricewatch";
 import { stripeWebhook } from "./stripe-webhook";
+import { studio } from "./studio";
 import { telegram } from "./telegram";
 import { auctionPage } from "./web/auction";
 import { box } from "./web/box";
@@ -38,6 +39,7 @@ app.route("/", market); // D
 app.route("/", buy); // D
 app.route("/", watch); // D
 app.route("/", box); // D
+app.route("/", studio);
 app.route("/", auctionPage); // A
 app.route("/", telegram); // A
 app.route("/", orders); // B
