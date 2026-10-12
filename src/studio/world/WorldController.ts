@@ -307,12 +307,15 @@ export class WorldController {
 
   // Re-orients the captured skin to match a provenance plate's viewpoint —
   // the "same angle as the seller's photo" move.
+  onPlateAlign?: (idx: number) => void;
+
   alignSplatToPlate(idx: number) {
     if (!this.splat) return;
     const from = this.splat.rotation.y;
     const target = idx === 0 ? 0 : Math.PI;
     const to = from + Math.atan2(Math.sin(target - from), Math.cos(target - from));
     this.splatYaw = { from, to, t0: performance.now() };
+    this.onPlateAlign?.(idx);
   }
 
   private pinEvidence() {

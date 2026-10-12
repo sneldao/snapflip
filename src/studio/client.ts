@@ -63,7 +63,36 @@ const params = new URLSearchParams(location.search);
 const audio = createAudio();
 const hintEl = el<HTMLDivElement>("gesture-hint");
 const soundBtn = el<HTMLButtonElement>("btn-sound");
-const did = { rotate: false, lamp: false, nav: false };
+const bootEl = el<HTMLDivElement>("boot");
+const bootLine = el<HTMLDivElement>("boot-line");
+const bootBar = el<HTMLSpanElement>("boot-bar");
+const introEl = el<HTMLDivElement>("intro");
+const did = { rotate: false, lamp: false, nav: false, click: false };
+let introDone = params.get("demo") === "1" || chDeepLink();
+
+function chDeepLink() {
+  return params.get("ch") !== null;
+}
+
+function bootStep(pct: number, msg: string, err = false) {
+  bootBar.style.width = `${pct}%`;
+  bootLine.textContent = msg;
+  bootLine.className = `line${err ? " err" : ""}`;
+}
+function bootDone() {
+  bootEl.classList.add("done");
+  setTimeout(() => bootEl.remove(), 900);
+}
+bootStep(25, "waking the renderer");
+
+function syncIntro() {
+  introEl.hidden = introDone || CHAPTERS[chapter] !== "discover" || drawer.classList.contains("open");
+}
+el<HTMLButtonElement>("intro-go").addEventListener("click", () => {
+  introDone = true;
+  syncIntro();
+  setChapter(1);
+});
 
 function updateHint() {
   if (drawer.classList.contains("open")) {
@@ -71,8 +100,12 @@ function updateHint() {
     return;
   }
   let html = "";
-  if (CHAPTERS[chapter] === "inspect" && (!did.rotate || !did.lamp)) {
-    html = `<span class="${did.rotate ? "done" : ""}">drag item to rotate</span> &middot; <span class="${did.lamp ? "done" : ""}">drag the lamp to move light</span>`;
+  if (CHAPTERS[chapter] === "inspect" && (!did.rotate || !did.lamp || (splatOn && !did.click))) {
+    const parts: string[] = [];
+    if (!did.rotate) parts.push("drag item to rotate");
+    if (!did.lamp) parts.push("drag the lamp to move light");
+    if (splatOn && !did.click) parts.push("click the object to pin evidence &middot; click a plate to match its angle");
+    html = parts.join(" &middot; ");
   } else if (!did.nav) {
     html = "scroll or pick a chapter to move through the world";
   }
@@ -88,8 +121,11 @@ try {
     postFx: params.get("fx") !== "0",
   });
   (window as unknown as { __world?: WorldController }).__world = world ?? undefined;
+  bootStep(80, "carving the world");
 } catch {
   el<HTMLDivElement>("webgl-fallback").style.display = "block";
+  bootStep(100, "renderer unavailable — controls still work", true);
+  setTimeout(bootDone, 1600);
 }
 
 const markerBtns: HTMLButtonElement[] = [];
@@ -113,7 +149,15 @@ if (world) {
       refreshDecision();
     }
   };
-  world.onEvidencePinned = () => selectMarker(0);
+  world.onEvidencePinned = () => {
+    did.click = true;
+    updateHint();
+    selectMarker(0);
+  };
+  world.onPlateAlign = () => {
+    did.click = true;
+    updateHint();
+  };
   world.onDrag = (kind) => {
     if (kind === "item") did.rotate = true;
     else did.lamp = true;
@@ -202,9 +246,11 @@ function syncChips() {
 function setChapter(i: number) {
   chapter = i;
   did.nav = true;
+  if (CHAPTERS[i] !== "discover") introDone = true;
   audio.whoosh();
   audio.setChapter(CHAPTERS[i]);
   world?.setChapter(i);
+  syncIntro();
   updateHint();
   if (CHAPTERS[i] === "auction") world?.setEvidenceFocus(selectedMarker >= 0 ? selectedMarker : null);
   document.querySelectorAll<HTMLButtonElement>("[data-ch]").forEach((b) => {
@@ -262,6 +308,7 @@ function toggleDrawer(which: "direct" | "scenario") {
   drawer.classList.toggle("open", showDirect || showScenario);
   el<HTMLButtonElement>("btn-direct").setAttribute("aria-pressed", String(showDirect));
   el<HTMLButtonElement>("btn-scenario").setAttribute("aria-pressed", String(showScenario));
+  syncIntro();
   updateHint();
 }
 
@@ -425,8 +472,15 @@ if (splatUrl && world) {
       const credit = params.get("credit");
       badge.textContent = credit ? `photo reconstruction · ${credit}` : "photo reconstruction";
       syncChips();
+      updateHint();
     }
   });
+}
+
+syncIntro();
+if (world) {
+  bootStep(100, "entering the racks");
+  setTimeout(bootDone, 350);
 }
 
 // ?demo=1 — scripted showcase for the video reel: Rack → Atelier (auto-spin +

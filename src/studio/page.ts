@@ -97,12 +97,29 @@ export function studioPage(aiEnabled: boolean) {
                       transition: opacity 0.6s ease; }
       #gesture-hint .done { color: var(--porcelain-dim); text-decoration: line-through; }
       #gesture-hint.fade { opacity: 0; pointer-events: none; }
+      #boot { position: fixed; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center;
+              background: var(--charcoal); transition: opacity 0.7s ease; }
+      #boot.done { opacity: 0; pointer-events: none; }
+      #boot .inner { text-align: center; max-width: min(80vw, 360px); }
+      #boot .mark { font-size: 1.5rem; letter-spacing: 0.02em; }
+      #boot .mark b { color: var(--amber-hi); font-weight: 600; }
+      #boot .tag { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.22em; text-transform: uppercase;
+                   color: var(--porcelain-dim); margin-top: 6px; }
+      #boot .bar { height: 2px; background: var(--line); border-radius: 2px; margin: 18px 0 10px; overflow: hidden; }
+      #boot .bar span { display: block; height: 100%; width: 5%; background: var(--amber);
+                        border-radius: 2px; transition: width 0.5s ease; }
+      #boot .line { font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.14em; text-transform: uppercase;
+                    color: var(--porcelain-dim); }
+      #boot .line.err { color: var(--red); text-transform: none; }
+      #intro { top: 50%; right: 12px; transform: translateY(-50%); border-left: 3px solid var(--amber); }
+      #intro .cta { margin-top: 9px; }
       @media (max-width: 860px) {
         .badge { font-size: 0.54rem; white-space: normal; overflow-wrap: anywhere; text-align: center; }
         .topbar { max-width: calc(100vw - 24px); padding: 8px 12px; }
         .card { max-width: calc(100vw - 24px); }
         #decision { top: auto; bottom: 122px; right: 12px; left: 12px; max-width: none; }
         #evidence-card { top: auto; bottom: 122px; right: 12px; left: 12px; max-width: none; transform: none; }
+        #intro { top: auto; bottom: 122px; right: 12px; left: 12px; max-width: none; transform: none; }
         .nav { bottom: 10px; padding: 6px 8px; gap: 6px; }
         .nav button { padding: 7px 11px; }
         .drawer { bottom: 60px; }
@@ -113,6 +130,14 @@ export function studioPage(aiEnabled: boolean) {
   </head>
   <body>
     <div id="stage"></div>
+    <div id="boot" role="status" aria-live="polite">
+      <div class="inner">
+        <div class="mark">SnapFlip <b>Studio</b></div>
+        <div class="tag">one world &middot; discover &middot; inspect &middot; auction</div>
+        <div class="bar"><span id="boot-bar"></span></div>
+        <div class="line" id="boot-line">waking up</div>
+      </div>
+    </div>
     <div class="markers" id="markers"></div>
     <div id="webgl-fallback" role="status">WebGL isn&rsquo;t available in this browser. The scene spec and simulated decision still work via the controls below.</div>
 
@@ -138,6 +163,13 @@ export function studioPage(aiEnabled: boolean) {
       <div class="who">evidence point &middot; procedural proxy, not a reconstruction</div>
       <div class="verdict" id="ev-title">—</div>
       <div class="why" id="ev-detail"></div>
+    </div>
+
+    <div class="card" id="intro" hidden>
+      <div class="who">lot 07 &middot; found in the racks</div>
+      <div class="verdict">A worn cartridge, tagged and waiting.</div>
+      <div class="why">Take it to the inspection table to check its evidence — then watch a simulated collector decide, and walk if the rules say so.</div>
+      <div class="cta"><button type="button" class="btn primary" id="intro-go">Take it to inspection</button></div>
     </div>
 
     <div id="diag" hidden></div>
