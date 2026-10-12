@@ -8,6 +8,10 @@
   // /media/* goes through the Worker first so it can answer Range requests (Safari won't play video without 206s).
   "assets": { "directory": "./public", "binding": "ASSETS", "run_worker_first": ["/media/*"] },
 
+  // IMPORTANT: deploy from the Cloudflare account thepapajams@gmail.com —
+  // it owns the `snapflip` workers.dev subdomain (go.snapflip.workers.dev)
+  // and this D1. Deploying from another account provisions a parallel,
+  // misconfigured stack under a different URL. See AGENTS.md.
   // Owner: C. Create with `wrangler d1 create snapflip` and paste the id here.
   "d1_databases": [
     { "binding": "DB", "database_name": "snapflip", "database_id": "08a6acfb-3cce-4a9b-96d1-2ac5c962bb96" }
