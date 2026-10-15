@@ -59,5 +59,8 @@ Workers Analytics Engine dataset `snapflip_studio` (binding `STUDIO_EVENTS`):
 is anonymous and carries only the event name and chapter. Unknown events are
 rejected. The binding is optional, so events are dropped when it is absent.
 
-The binding is in `wrangler.jsonc`. It takes effect only after a deploy from
-the deploy account (see AGENTS.md).
+The binding is intentionally left out of `wrangler.jsonc`: Analytics Engine is
+not enabled on the deploy account, and binding it makes `wrangler deploy` fail
+(code 10089). Events are dropped silently until the account enables Analytics
+Engine (dashboard → Workers → Analytics Engine) and the binding is re-added —
+the commented line in `wrangler.jsonc` shows how.

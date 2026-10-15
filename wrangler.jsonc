@@ -18,8 +18,11 @@
   ],
   // `wrangler r2 bucket create snapflip-photos`
   "r2_buckets": [{ "binding": "PHOTOS", "bucket_name": "snapflip-photos" }],
-  // Anonymous studio engagement events (src/studio/events.ts). Optional in dev.
-  "analytics_engine_datasets": [{ "binding": "STUDIO_EVENTS", "dataset": "snapflip_studio" }],
+  // STUDIO_EVENTS intentionally unbound: Analytics Engine is not enabled on this
+  // account (dashboard opt-in unavailable), and deploying with a bound dataset
+  // fails with code 10089. /api/studio/event no-ops safely without it. To enable:
+  // dashboard → Workers → Analytics Engine, then re-add:
+  // "analytics_engine_datasets": [{ "binding": "STUDIO_EVENTS", "dataset": "snapflip_studio" }],
   // `wrangler queues create snapflip-match`
   "queues": {
     "producers": [{ "binding": "MATCH_QUEUE", "queue": "snapflip-match" }],

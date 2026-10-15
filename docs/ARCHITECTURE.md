@@ -128,7 +128,7 @@ Match-time lookup (`findCandidates`, the `order_skus` join) is unaffected — it
 | POST | `/api/studio/photos` | Dev-only: provenance photo upload → R2 `studio-*` keys (magic-byte sniffed, 8MB cap) |
 | GET | `/studio-photos/{key}` | Dev-only: serves an uploaded provenance photo from R2 |
 | POST | `/api/studio/preview` | Dev-only: model preview endpoint |
-| POST | `/api/studio/event` | Anonymous UX events → Analytics Engine `snapflip_studio` (optional `STUDIO_EVENTS` binding; unknown events rejected) |
+| POST | `/api/studio/event` | Anonymous UX events → Analytics Engine `snapflip_studio` via optional `STUDIO_EVENTS` binding (currently unbound — AE not enabled on the deploy account, see `wrangler.jsonc`; events drop silently; unknown events rejected) |
 
 ## Payments flow
 
