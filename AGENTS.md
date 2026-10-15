@@ -29,4 +29,15 @@ deleted). Check `npx wrangler whoami` before deploying.
   `?gpu=0` (legacy WebGLRenderer), `?debug` (diagnostics incl. backend),
   `?fast=1` (skip listing cold-open), `?cond=` + `?rule=1` + `?claim=`
   (director's mode — plant hidden condition vs the seller's claim).
-- Full architecture/strategy notes: `docs/AI_BUILDER_2026_3D_NOTES.md`.
+- Plan: `docs/studio/STRATEGY.md`. Running status of what's built and
+  verified: `docs/studio/STATUS.md` — update STATUS as work lands, not
+  STRATEGY.
+
+## Docs
+
+- `docs/ARCHITECTURE.md` — system design (components, endpoints, schema).
+- `docs/studio/` — STRATEGY (plan), STATUS (running log), USER_TEST_PLAN.
+- `docs/history/` — hackathon-day artifacts (BUILD, DEMO, SUBMISSION);
+  statuses there are frozen, not current.
+- `docs/internal/` — ops runbook, machine-local only; gitignored and
+  never committed.

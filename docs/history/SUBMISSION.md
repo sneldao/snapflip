@@ -1,5 +1,9 @@
 # Devpost submission — copy-paste ready
 
+> **Historical record — Startup Speedrun hackathon.** The submitted Devpost
+> copy. Reuse the "What it does", "How we built it" and business-case
+> sections for future write-ups; numbers and placeholders are event-day.
+
 Track: **Agentic Payments**. Fill `<>` placeholders from `/api/stats` and the final take before submitting. Deadline 3:15 PM (edit until 3:30).
 
 ## Project name

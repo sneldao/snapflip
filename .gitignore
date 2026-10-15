@@ -14,5 +14,8 @@ dist/
 # Local video projects (own repo/config, not lintable here)
 videos/
 
+# Internal ops docs — machine-local, never commit (server IPs, credential paths)
+docs/internal/
+
 # Brainbase agent credentials
 .brainbase/

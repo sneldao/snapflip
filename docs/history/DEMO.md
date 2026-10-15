@@ -1,5 +1,9 @@
 # Demo video (2:00 target)
 
+> **Historical record — Startup Speedrun hackathon.** The demo script,
+> recruiting pitch and submission checklist from event day. Still a useful
+> template for future demo videos and booth recruiting.
+
 The story: **two humans, several agents, one real transaction, under 60 seconds — told backwards.** Open on the impossible result, rewind, replay it in real time.
 
 ## Script
@@ -64,7 +68,7 @@ Live: `snapflip-concierge` agent (`b3ff7b7f`) created via `brainbase` CLI under 
 
 ## Devpost draft
 
-Full copy-paste-ready submission lives in [`docs/SUBMISSION.md`](SUBMISSION.md) — project name, tagline, story fields, built-with list, links, checklist.
+Full copy-paste-ready submission lives in [`docs/history/SUBMISSION.md`](SUBMISSION.md) — project name, tagline, story fields, built-with list, links, checklist.
 
 ## X post draft
 

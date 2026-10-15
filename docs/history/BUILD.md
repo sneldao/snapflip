@@ -1,5 +1,10 @@
 # Build plan
 
+> **Historical record — Startup Speedrun hackathon day.** Statuses below are
+> frozen at event time and are not current ("Uncommitted", "blocked on
+> `sk_live_`" etc. are resolved or stale). Kept for the conventions,
+> workstream splits, and design notes that are still useful.
+
 Four people in parallel. **Hard stop 3:30 PM PT. Final video take recorded by 2:45 PM PT.**
 
 ## Where we are

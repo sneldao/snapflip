@@ -2,7 +2,7 @@
 
 An order book for secondhand goods where AI agents bid on your thrift find while it's still on the rack.
 
-Built for the Startup Speedrun Hackathon (Brainbase × Anthropic × Cloudflare × Stripe). Primary track: **Agentic Payments**.
+**Live:** https://go.snapflip.workers.dev — landing page with real-time demand; `/buy` to set a standing order, `/mcp?token=…` as a Claude connector, `/studio` for the 3D inspection experience. Text the collector desk: **+1 650 315 6536** — Scout qualifies you, cites the live book, and hands off a prefilled order. Just browsing? Text it the thing you lost as a kid: it prices the buy-back off real market data (`/api/market`), appraises your whole childhood box (`/box`), and sets a price watch that pings you on Telegram when the tape dips (`/watch`).
 
 ## The problem
 
@@ -27,6 +27,12 @@ If the price doesn't clear the seller's reserve, they walk away and have lost no
 - **Agents with real authority.** Buyer agents commit money on their own, within limits their human set. That's autonomy with guardrails, not a chatbot.
 - **Auctions that feel native to agents.** A clock auction means each agent just needs to know its buyer's true value. Sniping and bid-shading don't help, so agents stay simple and honest, and it's a live show for the seller.
 
+## SnapFlip Studio
+
+`/studio` is a second product built on the same backend: an AI-native 3D inspection-and-auction experience. A seller's photos become a spatially inspectable object; a draggable raking lamp reveals photographed condition; and simulated buyer agents make decisions that cite the evidence — running as one continuous Three.js world across three chapters (the Rack, the Inspection Atelier, the Auction Chamber). WebGPU where available, WebGL2 otherwise.
+
+Strategy, gates and acceptance tests: [`docs/studio/STRATEGY.md`](docs/studio/STRATEGY.md). What's actually built and verified: [`docs/studio/STATUS.md`](docs/studio/STATUS.md).
+
 ## Business model
 
 A 10% seller fee on the clearing price (`SELLER_FEE_BPS`, snapshotted per sale into the `platform_fees` ledger so rate changes never rewrite history), against typically 13–15% all-in on eBay and 20% on Poshmark. Sellers accept it because the item is already sold — the fee is quoted live on every auction page and broken out in the seller's payout message. Later: a buyer subscription for priority matching, and data products built on real-time demand.
@@ -35,15 +41,42 @@ A 10% seller fee on the clearing price (`SELLER_FEE_BPS`, snapshotted per sale i
 
 **Physical collectibles with an exact identity** — retro video games first. Every item has a canonical SKU, collectors already keep wishlists, carts turn up constantly at thrift stores, and counterfeit risk is manageable (the model flags reproductions, code disqualifies them). The engine is category-agnostic: the catalog is a table, so vinyl records (exact pressings), LEGO (set numbers) and TCG (card + set) are a data migration, not a rebuild. Sneakers later, once authentication exists.
 
+## Quickstart
+
+```sh
+npm install
+cp .dev.vars.example .dev.vars   # fill in your own keys
+npm run db:local                 # local D1: schema + seed
+npm run dev                      # wrangler dev (builds the studio bundle first)
+```
+
+- **Telegram:** make your own test bot with BotFather, expose dev with `cloudflared tunnel --url http://localhost:8787`, then `npm run tg:webhook -- <tunnel-url>`.
+- **Verify before pushing:** `npm run check` (studio typecheck + `tsc` + wrangler dry-run). Also `npm test`, `npm run lint`.
+- **Deploys:** `npm run deploy` — but check `npx wrangler whoami` first; production lives on a specific Cloudflare account (see `AGENTS.md`).
+
 ## Stack
 
-| Sponsor | Used for |
+| Provider | Used for |
 |---|---|
 | Anthropic | Claude vision (SKU identification and condition grading), match verification, parsing plain-English order rules and valuing each item against them (Featherless as the OpenAI-compatible fallback provider) |
 | Cloudflare | Workers, Agents SDK (one Durable Object per buyer agent), a Durable Object per auction (alarms for the clock, hibernatable WebSockets for live bids), remote MCP server, D1, R2, Queues |
 | Stripe | Buyer spending limits (saved card charged off-session, cap enforced in code; Shared Payment Tokens slot in later), manual capture, Connect Express seller payouts via separate charges and transfers, webhooks |
 | Brainbase | Hosted buyer concierge worker (chat deployment) that creates standing orders through our API |
+| Three.js | Studio world — WebGPURenderer (WebGPU/WebGL2 backends), Gaussian splats, post-processing chain |
 
-**Live:** https://go.snapflip.workers.dev — landing page with real-time demand; `/buy` to set a standing order, `/mcp?token=…` as a Claude connector. Text the collector desk: **+1 650 315 6536** — Scout qualifies you, cites the live book, and hands off a prefilled order. Just browsing? Text it the thing you lost as a kid: it prices the buy-back off real market data (`/api/market`), appraises your whole childhood box (`/box`), and sets a price watch that pings you on Telegram when the tape dips (`/watch`).
+## Docs
 
-Docs: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/BUILD.md`](docs/BUILD.md), [`docs/DEMO.md`](docs/DEMO.md).
+| Doc | What |
+|---|---|
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | System design: components, endpoints, payments flow, schema, trust & safety |
+| [`docs/studio/STRATEGY.md`](docs/studio/STRATEGY.md) | Studio plan: positioning, chapters, gates, acceptance tests |
+| [`docs/studio/STATUS.md`](docs/studio/STATUS.md) | Studio running status — what's built and verified |
+| [`docs/studio/USER_TEST_PLAN.md`](docs/studio/USER_TEST_PLAN.md) | Studio user-test script, clip plan, analytics |
+| [`scout/README.md`](scout/README.md) | Scout, the collector-desk agent: modes, safety model, deploy |
+| [`docs/history/`](docs/history/) | Hackathon-day artifacts: build plan, demo script, Devpost copy |
+
+`AGENTS.md` has the agent-facing notes (deploy account, studio commands, deep links). `docs/internal/` is machine-local ops and never committed.
+
+---
+
+Originally built for the Startup Speedrun Hackathon (Brainbase × Anthropic × Cloudflare × Stripe), Agentic Payments track. MIT licensed.
