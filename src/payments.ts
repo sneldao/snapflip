@@ -50,12 +50,12 @@ const AUTH_HOLD_MS = 2 * 60 * 60 * 1000;
 type AuctionRow = {
   id: string; status: string; clearing_cents: number | null; payment_intent_id: string | null;
   winner_order_id: string | null; seller_id: string; stripe_account_id: string | null;
-  buyer_id: string | null; title: string;
+  buyer_id: string | null; title: string; payment_rail: string | null;
 };
 
 async function loadAuction(env: Env, auctionId: string): Promise<AuctionRow | null> {
   return env.DB.prepare(
-    `SELECT a.id, a.status, a.clearing_cents, a.payment_intent_id, a.winner_order_id,
+    `SELECT a.id, a.status, a.clearing_cents, a.payment_intent_id, a.winner_order_id, a.payment_rail,
             sn.seller_id, se.stripe_account_id, o.buyer_id,
             COALESCE(sk.title, 'item') AS title
        FROM auctions a JOIN snaps sn ON sn.id = a.snap_id JOIN sellers se ON se.id = sn.seller_id
@@ -104,11 +104,14 @@ export async function settleAuction(env: Env, auctionId: string, ranked: RankedB
   return { ok: false, reason: "no bidder could be charged" };
 }
 
-/** HANDOFF A → C. Seller confirmed they bought the item: capture the authorized payment. */
+/** HANDOFF A → C. Seller confirmed they bought the item: capture the authorized payment.
+ *  x402-railed auctions have no auth to capture — the agent's on-chain payment was
+ *  already atomic — so they just transition to 'captured'. */
 export async function capture(env: Env, auctionId: string): Promise<void> {
   const a = await loadAuction(env, auctionId);
-  if (!a || a.status !== "settled" || !a.payment_intent_id) throw new Error("auction not capturable");
-  if (!stubMode(env)) await stripe(env).paymentIntents.capture(a.payment_intent_id, {}, { idempotencyKey: `capture_${auctionId}` });
+  const x402 = a?.payment_rail === "x402";
+  if (!a || a.status !== "settled" || (!x402 && !a.payment_intent_id)) throw new Error("auction not capturable");
+  if (!stubMode(env) && !x402) await stripe(env).paymentIntents.capture(a.payment_intent_id!, {}, { idempotencyKey: `capture_${auctionId}` });
   await env.DB.prepare("UPDATE auctions SET status = 'captured' WHERE id = ?").bind(auctionId).run();
   if (a.buyer_id) {
     await notify(env, { buyerId: a.buyer_id }, { type: "captured", auctionId, title: a.title, priceCents: a.clearing_cents ?? 0 });
@@ -209,9 +212,12 @@ export async function voidAuthorization(env: Env, auctionId: string): Promise<vo
   await notify(env, { sellerId: a.seller_id }, { type: "no_sale", auctionId, title: a.title });
 }
 
-/** Dispute / not-as-described: refund the captured payment. Only valid before the payout transfer. */
+/** Dispute / not-as-described: refund the captured payment. Only valid before the payout
+ *  transfer. x402-railed payments can't be refunded through Stripe — a PLT return
+ *  transfer is the path, and it's not built yet. */
 export async function refund(env: Env, auctionId: string): Promise<void> {
   const a = await loadAuction(env, auctionId);
+  if (a?.payment_rail === "x402") throw new Error("x402 payments refund via a PLT return transfer — not implemented");
   if (!a || a.status !== "captured" || !a.payment_intent_id) throw new Error("auction not refundable");
   if (!stubMode(env)) await stripe(env).refunds.create({ payment_intent: a.payment_intent_id }, { idempotencyKey: `refund_${auctionId}` });
   await env.DB.prepare("UPDATE auctions SET status = 'refunded' WHERE id = ?").bind(auctionId).run();
@@ -228,6 +234,27 @@ export async function voidExpiredAuths(env: Env): Promise<void> {
       await voidAuthorization(env, id);
     } catch (e) {
       console.error("voidExpiredAuths failed", id, (e as Error).message);
+    }
+  }
+}
+
+/** Cron sweep: x402-railed auctions where the winning agent never paid. Nothing was
+ *  captured, so this just expires the auction and reopens the winner's order. */
+export async function expireUnpaidAgentPayments(env: Env): Promise<void> {
+  const cutoff = new Date(Date.now() - AUTH_HOLD_MS).toISOString();
+  const { results } = await env.DB.prepare(
+    "SELECT id, winner_order_id FROM auctions WHERE status = 'awaiting_agent_payment' AND COALESCE(ended_at, started_at) < ?",
+  ).bind(cutoff).all<{ id: string; winner_order_id: string | null }>();
+  for (const { id, winner_order_id } of results) {
+    try {
+      await env.DB.batch([
+        env.DB.prepare("UPDATE auctions SET status = 'expired' WHERE id = ? AND status = 'awaiting_agent_payment'").bind(id),
+        env.DB.prepare("UPDATE orders SET status = 'open' WHERE id = ? AND status = 'filled'").bind(winner_order_id ?? ""),
+      ]);
+      const a = await loadAuction(env, id);
+      if (a) await notify(env, { sellerId: a.seller_id }, { type: "no_sale", auctionId: id, title: a.title });
+    } catch (e) {
+      console.error("expireUnpaidAgentPayments failed", id, (e as Error).message);
     }
   }
 }

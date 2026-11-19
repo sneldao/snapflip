@@ -37,6 +37,42 @@ export interface Env {
   BRAINBASE_LABS_API_KEY?: string;
   /** Web search for real-world sold-price comps (/api/market). Absent = endpoint 503s. */
   TAVILY_API_KEY?: string;
+
+  // Concordium (docs/CONCORDIUM.md). All optional — the badge gate defaults off.
+  /** CAIP-2 chain id. Defaults to testnet ccd:4221332d34e1694168c2a0c0b3fd0f27. */
+  CCD_NETWORK?: string;
+  /** Hosted Agent Registry API base. Defaults to https://agent-registry-mcp.concordium.com. */
+  CCD_REGISTRY_API?: string;
+  /** Registry network param for badge-check calls. Defaults to "testnet". */
+  CCD_REGISTRY_NETWORK?: string;
+  /** "true"/"1": refuse unbadged agents at the auction join gate. */
+  REQUIRE_AGENT_BADGE?: string;
+  /** The platform's own badge (Base58Check token address), embedded in the Agent Card. */
+  SNAPFLIP_AGENT_BADGE?: string;
+  /** CIS-8004 token id of the platform agent, for the card's registrations block. */
+  AGENT_TOKEN_ID?: string;
+  /** Concordium account (CAIP-10 without chain prefix is also fine) owning the fleet. */
+  AGENT_OWNER_ACCOUNT?: string;
+  /** "<index>.<subindex>" of the testnet CIS-8004 registry contract. */
+  REGISTRY_CONTRACT?: string;
+  /** "<index>.<subindex>" of the testnet CIS-8 key registry, if bound. */
+  CIS8_CONTRACT?: string;
+
+  // x402 agent-payment surface (/api/agent/*, docs/CONCORDIUM.md). Both must be set
+  // for the gate to engage; unset = endpoints return 503 and the free routes are unaffected.
+  /** Facilitator base URL that verifies+settles payments (and may sponsor network fees). */
+  X402_FACILITATOR_URL?: string;
+  /** Concordium account address receiving x402 payments. */
+  X402_PAYEE?: string;
+  /** Price for a paid market/collection call, e.g. "$0.05" (resolved to a PLT by the scheme). */
+  X402_PRICE?: string;
+  /** "x402": winners pay the clearing price on-chain via /api/agent/auctions/:id/settle
+   *  instead of a Stripe authorize. Only engages when the x402 gate is configured. */
+  SETTLE_RAIL?: string;
+  /** Price asset override — e.g. "EURQ" on testnet (USDR is the SDK's default). */
+  X402_ASSET?: string;
+  /** Decimals for X402_ASSET (default 6). */
+  X402_ASSET_DECIMALS?: string;
 }
 
 // Lets the Agents SDK classes (typed against Cloudflare.Env) see our bindings.
@@ -131,11 +167,13 @@ export interface Valuation {
   /** Hard ceiling for raises: min(order max, buyer payment limit). */
   limitCents: number;
   reason: string;
+  /** Verified by Concordium badge (CIS-8004 token address) of the buyer's agent, if registered. */
+  badge?: string | null;
 }
 
 export type AuctionStatus = "live" | "cleared" | "no_sale";
 
-export type BidEventType = "join" | "drop" | "raise" | "win";
+export type BidEventType = "join" | "drop" | "raise" | "win" | "refused";
 
 export interface BidEvent {
   orderId: string;
@@ -159,8 +197,10 @@ export interface AuctionView {
   closing?: boolean;
   /** Live take rate in basis points, so clients can quote the seller net as the clock ticks. */
   feeBps: number;
-  active: { orderId: string; label: string }[];
-  dropped: { orderId: string; label: string; atCents: number; reason: string }[];
+  active: { orderId: string; label: string; verified?: boolean }[];
+  dropped: { orderId: string; label: string; atCents: number; reason: string; verified?: boolean }[];
+  /** Agents refused at the join gate (missing or rejected Verified by Concordium badge). */
+  refused?: { orderId: string; label: string; reason: string }[];
   winner?: { orderId: string; label: string; priceCents: number; feeBps: number; feeCents: number; netCents: number };
 }
 

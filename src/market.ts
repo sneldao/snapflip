@@ -11,6 +11,36 @@ import type { Env } from "./types";
 
 export const market = new Hono<App>();
 
+// Shared lookup internals — the x402-gated agent surface (/api/agent/*, owner E)
+// reuses these. Payment replaces the free route's rate limit there.
+export function parseMarketQuery(raw: string | undefined): string | null {
+  const query = (raw ?? "").trim().replace(/\s+/g, " ").toLowerCase();
+  return query.length >= 2 && query.length <= 140 ? query : null;
+}
+
+export function parseCollectionItems(raw: string | undefined): string[] {
+  return (raw ?? "")
+    .split("|")
+    .map((s) => s.trim().replace(/\s+/g, " "))
+    .filter((s) => s.length >= 2 && s.length <= 140)
+    .slice(0, COLLECTION_MAX_ITEMS);
+}
+
+export async function marketLookup(env: Env, query: string): Promise<Record<string, unknown>> {
+  const cached = await readMarketCache(env, query);
+  if (cached) return { ...cached, cached: true };
+  return { ...(await fetchAndCacheMarket(env, query)), cached: false };
+}
+
+export async function collectionPayload(env: Env, items: string[]) {
+  const priced = await collectionPrices(env, items);
+  return {
+    items: priced,
+    totalCents: priced.reduce((sum, i) => sum + (i.refCents ?? 0), 0),
+    priced: priced.filter((i) => i.refCents != null).length,
+  };
+}
+
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 /** Uncached lookups allowed per minute — protects the search quota from a hot endpoint. */
 const RATE_LIMIT_PER_MIN = 20;
@@ -288,45 +318,28 @@ export async function collectionPrices(env: Env, items: string[]): Promise<Colle
 }
 
 market.get("/api/market", async (c) => {
-  const raw = c.req.query("q") ?? "";
-  const query = raw.trim().replace(/\s+/g, " ").toLowerCase();
-  if (query.length < 2 || query.length > 140) return c.json({ error: "q must be 2-140 chars" }, 400);
+  const query = parseMarketQuery(c.req.query("q"));
+  if (!query) return c.json({ error: "q must be 2-140 chars" }, 400);
   if (!c.env.TAVILY_API_KEY) return c.json({ error: "market lookup not configured" }, 503);
-
-  const cached = await readMarketCache(c.env, query);
-  if (cached) return c.json({ ...cached, cached: true });
 
   const calls = await c.env.DB.prepare(
     "SELECT COUNT(*) AS n FROM market_calls WHERE at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-1 minute')",
   ).first<{ n: number }>();
   if ((calls?.n ?? 0) >= RATE_LIMIT_PER_MIN) return c.json({ error: "rate limited" }, 429);
 
-  let payload;
   try {
     await c.env.DB.prepare("INSERT INTO market_calls DEFAULT VALUES").run();
-    payload = await fetchAndCacheMarket(c.env, query);
+    return c.json(await marketLookup(c.env, query));
   } catch {
     return c.json({ error: "market lookup failed" }, 502);
   }
-
-  return c.json({ ...payload, cached: false });
 });
 
 /** `?items=a|b|c` — up to 8 items, one market reference each, plus the total.
  * The desk's collection-valuation backing; /box renders the receipt for humans. */
 market.get("/api/collection", async (c) => {
-  const items = (c.req.query("items") ?? "")
-    .split("|")
-    .map((s) => s.trim().replace(/\s+/g, " "))
-    .filter((s) => s.length >= 2 && s.length <= 140)
-    .slice(0, COLLECTION_MAX_ITEMS);
+  const items = parseCollectionItems(c.req.query("items"));
   if (!items.length) return c.json({ error: "items must be 1-8 |-separated names, 2-140 chars each" }, 400);
   if (!c.env.TAVILY_API_KEY) return c.json({ error: "market lookup not configured" }, 503);
-
-  const priced = await collectionPrices(c.env, items);
-  return c.json({
-    items: priced,
-    totalCents: priced.reduce((sum, i) => sum + (i.refCents ?? 0), 0),
-    priced: priced.filter((i) => i.refCents != null).length,
-  });
+  return c.json(await collectionPayload(c.env, items));
 });

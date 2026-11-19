@@ -5,6 +5,9 @@ import { findCandidates } from "./match";
 import { settleAuction } from "./payments";
 import { notify } from "./telegram";
 import { pushLive } from "./live-tg";
+import { admitBidders } from "./lib/concordium";
+import { auctionReceipts } from "./lib/receipts";
+import { settleRail } from "./lib/x402";
 import { PLATFORM_FEES_DDL, feeLedgerRow, sellerFeeBps, splitFee } from "./lib/fees";
 import { devOnly, newId, nowIso, requireApiKey, type App } from "./lib/util";
 import type { AuctionStatus, AuctionView, BidEvent, Env, Snap, Valuation } from "./types";
@@ -36,6 +39,8 @@ interface State {
    *  and a just-dropped agent can still raise back in. */
   closing?: boolean;
   bidders: Bidder[];
+  /** Agents refused at the join gate — missing or rejected Verified by Concordium badge. */
+  refused?: { orderId: string; label: string; reason: string }[];
   events: BidEvent[];
   winner?: { orderId: string; buyerId: string; priceCents: number };
 }
@@ -66,9 +71,11 @@ export class AuctionDO extends DurableObject<Env> {
   async start(input: StartInput): Promise<AuctionView> {
     if (await this.load()) throw new Error("auction already started");
     const now = Date.now();
-    const bidders: Bidder[] = input.candidates
-      .filter((v) => v.eligible && v.dropoutCents >= input.reserveCents)
-      .map((v, i) => ({ ...v, label: `Agent #${i + 1}`, active: true }));
+    // Verified by Concordium gate (REQUIRE_AGENT_BADGE): an agent must carry a resolvable
+    // badge to join. Refusals land in the event log — the refusal IS the audit record.
+    const joinable = input.candidates.filter((v) => v.eligible && v.dropoutCents >= input.reserveCents);
+    const { admitted, refused } = await admitBidders(this.env, joinable);
+    const bidders: Bidder[] = admitted.map((v, i) => ({ ...v, label: `Agent #${i + 1}`, active: true }));
 
     const s: State = {
       id: input.id,
@@ -82,7 +89,11 @@ export class AuctionDO extends DurableObject<Env> {
       endsAt: now + (bidders.length === 1 ? SOLO_WINDOW_MS : DURATION_MS),
       extensions: 0,
       bidders,
-      events: bidders.map((b) => ({ orderId: b.orderId, event: "join", priceCents: input.reserveCents, reason: b.reason, at: nowIso() })),
+      refused: refused.map((r, i) => ({ orderId: r.orderId, label: `Unverified ${i + 1}`, reason: r.reason })),
+      events: [
+        ...bidders.map((b) => ({ orderId: b.orderId, event: "join" as const, priceCents: input.reserveCents, reason: b.reason, at: nowIso() })),
+        ...refused.map((r) => ({ orderId: r.orderId, event: "refused" as const, priceCents: input.reserveCents, reason: r.reason, at: nowIso() })),
+      ],
     };
 
     if (bidders.length === 0) {
@@ -244,6 +255,9 @@ export class AuctionDO extends DurableObject<Env> {
     const db = this.env.DB;
     // Ledger must exist on DBs created before it was added to schema.sql.
     await db.prepare(PLATFORM_FEES_DDL).run();
+    // Payment-rail columns on DBs created before they were added to schema.sql.
+    await db.prepare("ALTER TABLE auctions ADD COLUMN payment_rail TEXT").run().catch(() => {});
+    await db.prepare("ALTER TABLE auctions ADD COLUMN settle_tx_hash TEXT").run().catch(() => {});
     await db.batch([
       db.prepare("UPDATE auctions SET status = ?, ended_at = ?, clearing_cents = ?, winner_order_id = ? WHERE id = ?")
         .bind(s.status, nowIso(), winner ? s.priceCents : null, winner?.orderId ?? null, s.id),
@@ -255,6 +269,21 @@ export class AuctionDO extends DurableObject<Env> {
 
     if (!winner) {
       await notify(this.env, { sellerId: s.sellerId }, { type: "no_sale", auctionId: s.id, title: s.title });
+      return;
+    }
+
+    // x402 rail: the winning agent pays on-chain itself. The auction parks in
+    // awaiting_agent_payment until it calls /api/agent/auctions/:id/settle; the cron
+    // sweeper expires it if the agent never pays (expireUnpaidAgentPayments). No card
+    // auth exists on this rail, so there are no Stripe fallbacks — that's the trade-off
+    // the demo accepts for showing an agent paying on its own (docs/CONCORDIUM.md §6).
+    if (settleRail(this.env) === "x402") {
+      await db.batch([
+        db.prepare("UPDATE auctions SET status = 'awaiting_agent_payment', payment_rail = 'x402' WHERE id = ?").bind(s.id),
+        db.prepare("UPDATE orders SET status = 'filled' WHERE id = ?").bind(winner.orderId),
+      ]);
+      const wonOrder = await db.prepare("SELECT max_cents FROM orders WHERE id = ?").bind(winner.orderId).first<{ max_cents: number }>();
+      await notify(this.env, { buyerId: winner.buyerId }, { type: "auction_won", auctionId: s.id, title: s.title, priceCents: s.priceCents, maxCents: wonOrder?.max_cents ?? winner.limitCents });
       return;
     }
 
@@ -278,7 +307,7 @@ export class AuctionDO extends DurableObject<Env> {
     const { netCents } = splitFee(result.priceCents, feeBps);
     const ledger = feeLedgerRow(s.id, result.priceCents, feeBps);
     await db.batch([
-      db.prepare("UPDATE auctions SET status = 'settled', payment_intent_id = ?, winner_order_id = ?, clearing_cents = ? WHERE id = ?")
+      db.prepare("UPDATE auctions SET status = 'settled', payment_intent_id = ?, winner_order_id = ?, clearing_cents = ?, payment_rail = 'stripe' WHERE id = ?")
         .bind(result.paymentIntentId, result.orderId, result.priceCents, s.id),
       db.prepare("UPDATE orders SET status = 'filled' WHERE id = ?").bind(result.orderId),
       // Fee snapshot: history stays correct even if SELLER_FEE_BPS changes later.
@@ -324,10 +353,11 @@ export class AuctionDO extends DurableObject<Env> {
       endsAt: s.endsAt,
       closing: s.closing === true,
       feeBps,
-      active: s.bidders.filter((b) => b.active).map((b) => ({ orderId: b.orderId, label: b.label })),
+      active: s.bidders.filter((b) => b.active).map((b) => ({ orderId: b.orderId, label: b.label, verified: !!b.badge })),
       dropped: s.bidders
         .filter((b) => !b.active)
-        .map((b) => ({ orderId: b.orderId, label: b.label, atCents: b.droppedAtCents ?? s.priceCents, reason: b.reason })),
+        .map((b) => ({ orderId: b.orderId, label: b.label, atCents: b.droppedAtCents ?? s.priceCents, reason: b.reason, verified: !!b.badge })),
+      refused: s.refused?.length ? s.refused : undefined,
       winner: s.winner && winner && fee
         ? {
             orderId: s.winner.orderId,
@@ -414,6 +444,13 @@ auctions.get("/a/:id/photo", async (c) => {
 auctions.get("/api/auctions/:id", async (c) => {
   const view = await auctionStub(c.env, c.req.param("id")).getView();
   return view ? c.json(view) : c.json({ error: "not found" }, 404);
+});
+
+/** The auction's hash-chained receipt log — head hash is the on-chain anchor (week 3). */
+auctions.get("/api/auctions/:id/receipts", async (c) => {
+  const { head, events, settlement } = await auctionReceipts(c.env, c.req.param("id"));
+  if (!events.length) return c.json({ error: "not found" }, 404);
+  return c.json({ auctionId: c.req.param("id"), head, settlement, events });
 });
 
 /** Dev only: fake a snap of the seeded hero item and run an auction against the seeded orders. */

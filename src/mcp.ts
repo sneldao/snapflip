@@ -12,6 +12,7 @@ import type { MiddlewareHandler } from "hono";
 import { z } from "zod";
 import { auctionStub } from "./auction";
 import { buyerAgent } from "./buyer";
+import { badgeForBuyer, bindAgentBadge, checkBadge } from "./lib/concordium";
 import { buyerIdForToken } from "./lib/tokens";
 import { usd, type App } from "./lib/util";
 import { cancelOrder, createOrder, listOrders, orderbook } from "./orders";
@@ -87,12 +88,22 @@ export class SnapflipMCP extends McpAgent<Env, unknown, { buyerId: string }> {
         }>();
         if (!b) throw new Error("unknown buyer");
         const bot = this.env.TELEGRAM_BOT_USERNAME;
+        // Best-effort: pre-badge databases just report unverified.
+        let badge: string | null = null;
+        let badgeVerified = false;
+        try {
+          const ai = await badgeForBuyer(this.env, buyerId);
+          badge = ai.badge;
+          if (badge) badgeVerified = (await checkBadge(this.env, badge)).verified;
+        } catch { /* registry or table unavailable */ }
         return {
           name: b.name,
           limitCents: b.limit_cents,
           limitExpiresAt: b.limit_expires_at,
           cardSaved: b.payment_method_id != null,
           telegramLinked: b.tg_chat_id != null,
+          concordiumBadge: badge,
+          badgeVerified,
           setupUrl: `${this.env.PUBLIC_URL}/buy/setup?buyer=${buyerId}`,
           ...(bot ? { telegramUrl: `https://t.me/${bot}?start=${buyerId}` } : {}),
         };
@@ -127,6 +138,29 @@ export class SnapflipMCP extends McpAgent<Env, unknown, { buyerId: string }> {
           : [];
         return { ...order, matchedTitles };
       }),
+    );
+
+    this.server.registerTool(
+      "link_concordium_badge",
+      {
+        description:
+          "Link your agent's Verified by Concordium badge (CIS-8004 token address) to your buyer account. " +
+          "Only badged agents can join badge-gated auctions. The badge must verify against the Concordium registry.",
+        inputSchema: { badge: z.string().min(20).max(64) },
+      },
+      wrap(async ({ badge }, buyerId) => bindAgentBadge(this.env, buyerId, badge)),
+    );
+
+    this.server.registerTool(
+      "verify_agent_badge",
+      {
+        description:
+          "Check a counterparty's Verified by Concordium badge (CIS-8004 token address) against the Agent Registry " +
+          "before dealing with them — the badge proves a verified human or business stands behind that agent. " +
+          "Returns verified status, the owning account, and any issues found.",
+        inputSchema: { badge: z.string().min(20).max(64) },
+      },
+      wrap(async ({ badge }) => checkBadge(this.env, badge)),
     );
 
     this.server.registerTool(

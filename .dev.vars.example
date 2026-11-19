@@ -18,3 +18,37 @@ STRIPE_WEBHOOK_SECRET=
 BRAINBASE_LABS_API_KEY=
 # Powers GET /api/market + /api/collection — real-world comps behind the desk's games, watches, and box appraisals.
 TAVILY_API_KEY=
+
+# Concordium (docs/CONCORDIUM.md). All optional — the badge gate defaults off.
+# Network (defaults to testnet ccd:4221332d34e1694168c2a0c0b3fd0f27).
+#CCD_NETWORK=
+# Hosted Agent Registry API (default https://agent-registry-mcp.concordium.com).
+#CCD_REGISTRY_API=
+#CCD_REGISTRY_NETWORK=testnet
+# "true": refuse unbadged agents at the auction join gate. Leave unset until the
+# fleet is registered, or local auctions will refuse every bidder.
+#REQUIRE_AGENT_BADGE=
+# Platform agent's badge (Base58Check token address) after registration — embeds
+# the concordium-badge extension into /.well-known/agent-card.json.
+#SNAPFLIP_AGENT_BADGE=
+# CIS-8004 token id, owner account, and "<index>.<subindex>" contract ids.
+#AGENT_TOKEN_ID=
+#AGENT_OWNER_ACCOUNT=
+#REGISTRY_CONTRACT=
+#CIS8_CONTRACT=
+
+# x402 agent-payment surface (/api/agent/*). Both must be set for the gate to engage;
+# unset = the paid endpoints 503 and the free routes are unaffected.
+# Facilitator that verifies+settles payments and can sponsor network fees.
+#X402_FACILITATOR_URL=
+# Concordium account address receiving x402 payments.
+#X402_PAYEE=
+# Price per market/collection call (default "$0.05", resolved to a PLT by the scheme).
+#X402_PRICE=
+# "x402": winners pay the clearing price on-chain via /api/agent/auctions/:id/settle
+# instead of a Stripe authorize. Only engages when the gate above is configured.
+#SETTLE_RAIL=
+# Payment asset override — set to "EURQ" on testnet (the SDK's default-asset table
+# maps to USDR). Amounts become atomic units; X402_PRICE stays decimal units.
+#X402_ASSET=
+#X402_ASSET_DECIMALS=

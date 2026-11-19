@@ -72,7 +72,7 @@ CREATE TABLE IF NOT EXISTS snaps (
 CREATE TABLE IF NOT EXISTS auctions (
   id TEXT PRIMARY KEY,
   snap_id TEXT NOT NULL REFERENCES snaps(id),
-  status TEXT NOT NULL,                    -- live | cleared | no_sale | settled | captured | released | failed | expired | refunded
+  status TEXT NOT NULL,                    -- live | cleared | no_sale | awaiting_agent_payment | settled | captured | released | failed | expired | refunded
   started_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   ended_at TEXT,
   reserve_cents INTEGER NOT NULL,
@@ -85,9 +85,14 @@ CREATE TABLE IF NOT EXISTS auctions (
   proof_verdict TEXT,                      -- match | unclear | mismatch — vision check before capture
   proof_verdict_notes TEXT,
   tg_chat_id TEXT,                         -- seller's live-auction message, edited as the price climbs
-  tg_message_id INTEGER
+  tg_message_id INTEGER,
+  payment_rail TEXT,                       -- stripe | x402 — how the winner's payment was secured
+  settle_tx_hash TEXT                      -- Concordium tx hash once the agent's x402 payment lands
 );
 CREATE INDEX IF NOT EXISTS idx_auctions_pi ON auctions(payment_intent_id);
+-- Migration for DBs created before the payment-rail columns:
+-- ALTER TABLE auctions ADD COLUMN payment_rail TEXT;
+-- ALTER TABLE auctions ADD COLUMN settle_tx_hash TEXT;
 -- Migration for DBs created before the proof/live columns:
 -- ALTER TABLE auctions ADD COLUMN proof_requested_at TEXT;
 -- ALTER TABLE auctions ADD COLUMN proof_r2_key TEXT;
@@ -189,3 +194,21 @@ CREATE TABLE IF NOT EXISTS market_watches (
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 CREATE INDEX IF NOT EXISTS idx_market_watches_armed ON market_watches(status);
+
+-- Agent identity: links a buyer's agent to its Verified by Concordium badge
+-- (CIS-8004 token address). Also created lazily by findCandidates — kept here
+-- so fresh databases get the documented shape. See docs/CONCORDIUM.md.
+CREATE TABLE IF NOT EXISTS agent_identities (
+  buyer_id TEXT PRIMARY KEY REFERENCES buyers(id),
+  badge TEXT,                        -- CIS-8004 token address, Base58Check short form
+  ccd_account TEXT,                  -- Concordium account owning the agent NFT
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
+-- x402 settlement record: the winning agent paid the clearing price through the
+-- facilitator (docs/CONCORDIUM.md). Also created lazily by the settle route.
+CREATE TABLE IF NOT EXISTS x402_settlements (
+  auction_id TEXT PRIMARY KEY REFERENCES auctions(id),
+  payer TEXT,                      -- account that presented the X-PAYMENT proof
+  at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);

@@ -1,11 +1,13 @@
 // Router only. Each workstream owns its sub-router; add routes there, not here.
 import { Hono } from "hono";
+import { agentapi } from "./agentapi";
+import { agentcard } from "./agentcard";
 import { auctions } from "./auction";
 import { market } from "./market";
 import { handleMatchBatch } from "./match";
 import { mcpAuth } from "./mcp";
 import { orders } from "./orders";
-import { payments, voidExpiredAuths } from "./payments";
+import { expireUnpaidAgentPayments, payments, voidExpiredAuths } from "./payments";
 import { checkMarketWatches } from "./pricewatch";
 import { stripeWebhook } from "./stripe-webhook";
 import { studio } from "./studio";
@@ -46,6 +48,8 @@ app.route("/", orders); // B
 app.route("/", auctions); // B
 app.route("/", payments); // C
 app.route("/", stripeWebhook); // C
+app.route("/", agentcard); // E
+app.route("/", agentapi); // E
 
 // D: remote MCP (Streamable HTTP), behind per-buyer tokens (auth inside mcp.ts).
 app.all("/mcp", mcpAuth);
@@ -74,6 +78,7 @@ export default {
       return;
     }
     ctx.waitUntil(voidExpiredAuths(env));
+    ctx.waitUntil(expireUnpaidAgentPayments(env));
     ctx.waitUntil(checkMarketWatches(env));
   },
 } satisfies ExportedHandler<Env, MatchJob>;

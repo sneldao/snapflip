@@ -82,6 +82,8 @@ auctionPage.get("/a/:id", async (c) => {
           padding: 7px 12px 7px 8px; background: rgba(255, 179, 56, 0.05); }
         .chip-a.out { opacity: 0.38; background: transparent; }
         .chip-a.out .nm { text-decoration: line-through; }
+        .chip-a.ref { opacity: 0.6; background: transparent; border-color: var(--red); }
+        .chip-a.ref .nm { text-decoration: line-through; color: var(--red); }
         .chip-a .nm { font-family: var(--font-num); font-size: 1.1rem; line-height: 1; }
         .chip-a .why { display: block; color: var(--muted); font-size: 0.72rem; font-family: var(--font-body); }
         /* The appraisal slab: grade reads like a printed grading label. */
@@ -217,10 +219,16 @@ auctionPage.get("/a/:id", async (c) => {
           why.className = "why";
           txt.append(nm, why);
           ch.append(w, txt);
+          if (a.verified) {
+            ch.title = "Verified by Concordium";
+            nm.textContent += " ✓";
+          }
           return ch;
         }
         function renderAgents(v) {
-          var all = v.active.concat(v.dropped);
+          var refused = v.refused || [];
+          for (var r = 0; r < refused.length; r++) refused[r].ref = true;
+          var all = v.active.concat(v.dropped).concat(refused);
           for (var i = 0; i < all.length; i++) {
             if (!order.has(all[i].orderId)) order.set(all[i].orderId, order.size);
           }
@@ -230,7 +238,10 @@ auctionPage.get("/a/:id", async (c) => {
             .forEach(function (a) {
               var ch = chipFor(a);
               var dropped = a.atCents !== undefined;
-              if (dropped) {
+              if (a.ref) {
+                ch.classList.add("ref");
+                ch.lastChild.lastChild.textContent = "refused — " + a.reason;
+              } else if (dropped) {
                 ch.classList.add("out");
                 ch.lastChild.lastChild.textContent = "out @" + usd(a.atCents) + " — " + a.reason;
               } else {
@@ -275,6 +286,10 @@ auctionPage.get("/a/:id", async (c) => {
           for (var j = 0; j < v.dropped.length; j++) {
             var d = v.dropped[j];
             if (!seen.has("d" + d.orderId)) { seen.add("d" + d.orderId); feed(d.label + " dropped at " + usd(d.atCents) + ": " + d.reason, "drop"); }
+          }
+          for (var k = 0; k < (v.refused || []).length; k++) {
+            var r = v.refused[k];
+            if (!seen.has("r" + r.orderId)) { seen.add("r" + r.orderId); feed(r.label + " refused — " + r.reason, "drop"); }
           }
           var verdict = $("verdict");
           if (v.winner && !seen.has("w")) {

@@ -1,5 +1,6 @@
 // Owner: B. Find standing orders that match a snap and compute each agent's private dropout price.
 import { claudeJson, llmAvailable } from "./lib/claude";
+import { AGENT_IDENTITY_DDL } from "./lib/concordium";
 import type { Env, Grade, MatchJob, OrderRules, Snap, Valuation } from "./types";
 
 /**
@@ -79,18 +80,21 @@ const VERIFY_CONCURRENCY = 5;
 
 export async function findCandidates(env: Env, snap: Snap, opts: { includeUnpayable?: boolean } = {}): Promise<Valuation[]> {
   if (!snap.skuId) return [];
+  // Lazily created like the fees ledger: databases predating badges get the table here.
+  await env.DB.prepare(AGENT_IDENTITY_DDL).run();
   const { results } = await env.DB.prepare(
-    `SELECT o.id, o.buyer_id, o.rules_json, o.rules_text, o.max_cents, b.limit_cents
+    `SELECT o.id, o.buyer_id, o.rules_json, o.rules_text, o.max_cents, b.limit_cents, ai.badge
        FROM order_skus os
        JOIN orders o ON o.id = os.order_id
        JOIN buyers b ON b.id = o.buyer_id
+       LEFT JOIN agent_identities ai ON ai.buyer_id = b.id
       WHERE os.sku_id = ? AND o.status = 'open'
         AND (o.expires_at IS NULL OR o.expires_at > strftime('%Y-%m-%dT%H:%M:%fZ','now'))
         ${opts.includeUnpayable ? "" : "AND b.payment_method_id IS NOT NULL"}
       ORDER BY o.created_at`,
   )
     .bind(snap.skuId)
-    .all<{ id: string; buyer_id: string; rules_json: string; rules_text: string; max_cents: number; limit_cents: number }>();
+    .all<{ id: string; buyer_id: string; rules_json: string; rules_text: string; max_cents: number; limit_cents: number; badge: string | null }>();
 
   // Buyer Plus perk: Plus agents lead the field, so on equal dropoutCents the auction's
   // earliest-wins tie-break favors them (and they take the low Agent numbers). Best-effort:
@@ -105,10 +109,13 @@ export async function findCandidates(env: Env, snap: Snap, opts: { includeUnpaya
   } catch { /* pre-Plus database: nobody is Plus */ }
 
   const deterministic = results.map((r) => ({
-    val: valueForOrder(
-      { orderId: r.id, buyerId: r.buyer_id, rules: JSON.parse(r.rules_json), maxCents: r.max_cents, buyerLimitCents: r.limit_cents },
-      snap,
-    ),
+    val: {
+      ...valueForOrder(
+        { orderId: r.id, buyerId: r.buyer_id, rules: JSON.parse(r.rules_json), maxCents: r.max_cents, buyerLimitCents: r.limit_cents },
+        snap,
+      ),
+      badge: r.badge,
+    },
     rulesText: r.rules_text,
   }));
   // Stable partition: eligible Plus orders first, everything else keeps created_at order.
