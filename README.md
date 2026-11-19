@@ -80,3 +80,7 @@ npm run dev                      # wrangler dev (builds the studio bundle first)
 ---
 
 Originally built for the Startup Speedrun Hackathon (Brainbase × Anthropic × Cloudflare × Stripe), Agentic Payments track. MIT licensed.
+
+## PayPal AI Hackathon
+
+SnapFlip is being adapted for the PayPal AI Hackathon (submissions Oct 1 – Nov 12, 2026) under the “Build What’s Next with PayPal and AI” theme. See [`PAYPAL_HACKATHON.md`](./PAYPAL_HACKATHON.md) and [`docs/PAYPAL_HACKATHON.md`](./docs/PAYPAL_HACKATHON.md) for the PayPal integration plan, tools, demo script, and submission checklist.
