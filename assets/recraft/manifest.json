@@ -1,0 +1,19 @@
+{
+  "account": "papaandthejimjams",
+  "files": {
+    "og-base-rack.webp": "Amber-lit thrift rack scene \u2014 composited under the OG card type by scripts/gen-og.py (BASE_ART). Re-run: uv run --with pillow python3 scripts/gen-og.py",
+    "sold-tag-emblem.svg": "Amber SOLD price-tag emblem (vector). Brand motif for landing/docs/favicon.",
+    "catalog-pokemon-cart.webp": "Catalog shot \u2014 Pokemon GB cart + kraft tag, amber thrift lighting.",
+    "catalog-watch.webp": "Catalog shot \u2014 vintage diver watch + tag.",
+    "catalog-jacket.webp": "Catalog shot \u2014 worn leather jacket + tag.",
+    "picker.webp": "Phosphor picker character mid-reach into rack \u2014 landing beat t2 (Snap).",
+    "poster-sold-before-you-buy.webp": "Kraft thrift-auction poster \u2014 pinned on studio curved wall (chapters.ts)."
+  },
+  "copied_to": [
+    "public/media/recraft/"
+  ],
+  "note": "gen-og.py needs Pillow; system python3 PIL is broken on this machine \u2014 use `uv run --with pillow python3 scripts/gen-og.py`.",
+  "meshy": {
+    "cartridge": "public/cart-meshy.glb \u2014 Meshy 7.1+7 image-to-3d from catalog-pokemon-cart.webp (task 01a1f1b5, 30cr), gltf-transform optimized 16MB\u2192889KB (webp tex + simplify). Inspectable via /studio?glb=/cart-meshy.glb (attachGlb in WorldController, mirrors attachSplat)."
+  }
+}

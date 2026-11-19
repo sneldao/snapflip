@@ -122,6 +122,7 @@ export function studioPage(aiEnabled: boolean) {
                  font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
                  transition: opacity 0.8s ease, transform 0.8s ease; }
       #listing.lift { opacity: 0; transform: scale(0.94) translateY(-20px); pointer-events: none; }
+      #listing[hidden] { display: none; }
       #listing .sheet { width: min(92vw, 640px); background: #fff; border: 1px solid #d8d5cf; border-radius: 4px;
                         box-shadow: 0 2px 10px rgba(0, 0, 0, 0.14); padding: 18px 20px; }
       #listing .site { font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase; color: #8a857c; margin-bottom: 14px; }
@@ -180,11 +181,123 @@ export function studioPage(aiEnabled: boolean) {
         .marker, .chip, .nav button, .btn, .toast button { min-height: 44px; }
         .chip, .nav button { display: inline-flex; align-items: center; }
       }
+      .nav a.navlink { border: 1px dashed var(--amber); color: var(--amber-hi); border-radius: 999px;
+                       padding: 8px 14px; font-family: var(--mono); font-size: var(--min-text); letter-spacing: 0.06em;
+                       text-transform: uppercase; text-decoration: none; white-space: nowrap; }
+      @media (pointer: coarse) { .nav a.navlink { min-height: 44px; display: inline-flex; align-items: center; } }
+
+      /* ---------- Counter Check: the examiner's paper slip ---------- */
+      body.counter-mode .topbar, body.counter-mode .nav, body.counter-mode .markers,
+      body.counter-mode .card, body.counter-mode #listing, body.counter-mode .drawer,
+      body.counter-mode #beat, body.counter-mode #gesture-hint, body.counter-mode .toast { display: none !important; }
+      /* Scope the render rect, not an overlay: the item keeps the left of the
+         viewport while the slip owns a fixed-width paper column on the right. */
+      body.counter-mode #stage { right: min(410px, 42vw); }
+      #counter-root { display: none; position: fixed; top: 14px; right: 14px; bottom: 14px; z-index: 14;
+                      width: min(380px, 40vw); pointer-events: none; }
+      body.counter-mode #counter-root { display: block; }
+      /* The tell: an ink/mint reticle driven by the real MarkerLayer anchor —
+         hidden until the lock latches. */
+      #counter-tell { display: none; position: absolute; width: 36px; height: 36px;
+                      transform: translate(-50%, -50%); z-index: 2; pointer-events: none; }
+      #counter-tell::before { content: ""; position: absolute; inset: 9px; border-radius: 50%;
+                              border: 1.5px solid #a8e6bf; box-shadow: 0 0 0 1px rgba(12, 26, 18, 0.6); }
+      #counter-tell::after { content: ""; position: absolute; inset: 0; background-repeat: no-repeat;
+        background-image:
+          linear-gradient(#a8e6bf, #a8e6bf), linear-gradient(#a8e6bf, #a8e6bf),
+          linear-gradient(#a8e6bf, #a8e6bf), linear-gradient(#a8e6bf, #a8e6bf),
+          linear-gradient(#a8e6bf, #a8e6bf), linear-gradient(#a8e6bf, #a8e6bf),
+          linear-gradient(#a8e6bf, #a8e6bf), linear-gradient(#a8e6bf, #a8e6bf);
+        background-size: 10px 1.5px, 1.5px 10px, 10px 1.5px, 1.5px 10px,
+                         10px 1.5px, 1.5px 10px, 10px 1.5px, 1.5px 10px;
+        background-position: top left, top left, top right, top right,
+                             bottom left, bottom left, bottom right, bottom right;
+        filter: drop-shadow(0 0 1px rgba(12, 26, 18, 0.7)); }
+      body.counter-mode #counter-tell.is-lit { display: block; }
+      /* The fallback notice stays inside the stage rect, off the paper. */
+      body.counter-mode #webgl-fallback { left: 12px; right: auto; transform: none; max-width: min(380px, 52vw); }
+      body.counter-mode #webgl-fallback::after { content: " The assay is staged — the slip still works."; }
+      .slip { pointer-events: auto; height: 100%; overflow-y: auto; position: relative;
+              background: #ece1c4; color: #2c2417; font-family: var(--mono);
+              border: 1px solid #c9bb97; border-radius: 3px; padding: 14px 16px 10px;
+              box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55), 0 2px 0 #b7a97f inset;
+              background-image: repeating-linear-gradient(0deg, transparent, transparent 25px, rgba(90, 74, 40, 0.07) 25px, rgba(90, 74, 40, 0.07) 26px); }
+      .slip::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 10px;
+                      background: radial-gradient(circle at 5px 8px, var(--charcoal) 2.6px, transparent 3px) repeat-y;
+                      background-size: 10px 16px; opacity: 0.5; }
+      .paperclip { position: absolute; top: -14px; left: 34px; width: 14px; height: 34px;
+                   border: 3px solid #9aa0a8; border-bottom: 0; border-radius: 8px 8px 0 0;
+                   box-shadow: 0 2px 4px rgba(0,0,0,0.4); }
+      .slip .kicker { font-size: var(--min-text); letter-spacing: 0.22em; text-transform: uppercase; color: #7a6a45;
+                      border-bottom: 2px solid #2c2417; padding-bottom: 6px; }
+      .slip h2.lot { margin: 6px 0 3px; font-size: 1.35rem; letter-spacing: 0.04em; }
+      .slip .claim { margin: 0; font-size: 0.82rem; line-height: 1.5; font-style: italic; }
+      .slip .terms { margin: 8px 0 0; font-size: var(--min-text); line-height: 1.6; color: #6d5f3e; }
+      .slip .scan { margin-top: 10px; border-top: 1px dashed #b7a97f; padding-top: 10px; }
+      .slip .lbl { display: block; font-size: var(--min-text); letter-spacing: 0.14em; text-transform: uppercase;
+                   color: #4c4028; margin: 0 0 6px; }
+      .slip input[type="range"] { width: 100%; accent-color: #2c2417; }
+      .slip .meter { position: relative; height: 12px; margin-top: 10px; border: 1px solid #8a7a50;
+                     background: repeating-linear-gradient(90deg, rgba(60, 48, 24, 0.14) 0 2px, transparent 2px 12px); }
+      .slip .meter .beam, .slip .meter .holdline { position: absolute; inset: 0; transform: scaleX(0); transform-origin: left; }
+      .slip .meter .beam { background: rgba(90, 74, 40, 0.4); }
+      .slip .meter .holdline { background: #57c98a; }
+      .slip .live { font-size: var(--min-text); letter-spacing: 0.08em; text-transform: uppercase; color: #4c4028;
+                    margin-top: 8px; min-height: 1.2em; }
+      .slip.locked .live { color: #1c7a48; }
+      .slip .pin { margin-top: 10px; width: 100%; border: 2px solid #2c2417; background: transparent; color: #2c2417;
+                   font-family: var(--mono); font-size: 0.85rem; letter-spacing: 0.12em; text-transform: uppercase;
+                   padding: 10px; border-radius: 2px; }
+      .slip .pin:disabled { opacity: 0.4; }
+      .slip .pin:not(:disabled) { background: #2c2417; color: #a8e6bf; }
+      .slip .evidence { margin-top: 12px; border: 2px solid #1c7a48; background: #cdf0d8; padding: 10px 12px;
+                        transform: rotate(-0.6deg); }
+      .slip .evidence .stamp { display: inline-block; font-size: var(--min-text); letter-spacing: 0.28em;
+                               text-transform: uppercase; color: #1c7a48; border: 2px solid #1c7a48;
+                               padding: 2px 8px; transform: rotate(-2deg); }
+      .slip .evidence p { margin: 8px 0 0; font-size: 0.85rem; line-height: 1.5; }
+      .slip .calls { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 12px;
+                     border-top: 1px dashed #b7a97f; padding-top: 12px; }
+      .slip .calls button { border: 1px solid #2c2417; background: transparent; color: #2c2417;
+                            font-family: var(--mono); font-size: 0.82rem; letter-spacing: 0.06em; text-align: center;
+                            padding: 10px 6px; border-radius: 2px; }
+      .slip .calls button:hover:not(:disabled) { background: #2c2417; color: #ece1c4; }
+      .slip .calls button.chosen { background: #2c2417; color: #a8e6bf; }
+      .slip .calls button:disabled:not(.chosen) { opacity: 0.35; }
+      .slip .receipt { margin-top: 16px; border-top: 2px solid #2c2417; padding-top: 12px;
+                       background: rgba(255, 255, 255, 0.28); padding: 12px; margin-left: -6px; margin-right: -6px; }
+      .slip .receipt h3 { margin: 0 0 10px; font-size: 1.05rem; letter-spacing: 0.08em; outline: none; }
+      .slip .rline { display: flex; justify-content: space-between; gap: 10px; font-size: 0.85rem;
+                     border-bottom: 1px dotted #b7a97f; padding: 5px 0; }
+      .slip .rline span { color: #6d5f3e; text-transform: uppercase; font-size: var(--min-text); letter-spacing: 0.1em; }
+      .slip .r-net.up { color: #1c7a48; }
+      .slip .r-net.down { color: #a33b2a; }
+      .slip .r-why, .slip .r-verdict { font-size: 0.8rem; line-height: 1.55; margin: 8px 0; }
+      .slip .r-verdict { font-weight: 700; }
+      .slip .r-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+      .slip .share { border: 2px solid #2c2417; background: #2c2417; color: #ece1c4; font-family: var(--mono);
+                     font-size: var(--min-text); letter-spacing: 0.12em; text-transform: uppercase; padding: 9px 14px; }
+      .slip .next, .slip .slip-foot a { color: #4c4028; font-size: var(--min-text); letter-spacing: 0.1em; text-transform: uppercase; }
+      .slip .share-status { font-size: var(--min-text); color: #6d5f3e; margin: 8px 0 0; min-height: 1.1em; }
+      .slip .share-url { width: 100%; margin-top: 6px; font-family: var(--mono); font-size: var(--min-text);
+                         border: 1px dashed #8a7a50; background: transparent; color: #2c2417; padding: 6px 8px; }
+      .slip .slip-foot { margin-top: 16px; border-top: 1px dashed #b7a97f; padding-top: 10px;
+                         display: flex; gap: 16px; align-items: baseline; flex-wrap: wrap; }
+      .slip .slip-foot .fine { flex-basis: 100%; font-size: var(--min-text); color: #8a7a50; letter-spacing: 0.04em; }
+      .slip button:focus-visible, .slip a:focus-visible, .slip input:focus-visible {
+        outline: 2px solid #1c7a48; outline-offset: 2px; }
+      .slip.called .slip-foot .nextlot { display: none; }
+      @media (max-width: 860px) {
+        /* Bottom slip: the item keeps the top band of the viewport. */
+        body.counter-mode #stage { right: 0; bottom: auto; height: 46dvh; }
+        #counter-root { top: 46dvh; bottom: 8px; left: 8px; right: 8px; width: auto; height: auto; }
+        body.counter-mode #webgl-fallback { max-width: calc(100vw - 24px); }
+      }
       @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
     </style>
   </head>
   <body>
-    <div id="stage"></div>
+    <div id="stage"><span id="counter-tell" aria-hidden="true"></span></div>
     <div id="boot" role="status" aria-live="polite">
       <div class="inner">
         <div class="mark">SnapFlip <b>Studio</b></div>
@@ -268,8 +381,10 @@ export function studioPage(aiEnabled: boolean) {
       <button type="button" id="btn-reset">Reset view</button>
       <button type="button" id="btn-share">Copy link</button>
       <button type="button" id="btn-sound" aria-pressed="true">Sound on</button>
+      <a class="navlink" href="/studio?lot=07" title="A counter examiner's call — sweep the lamp, stamp the evidence, make the call">Counter check</a>
     </nav>
 
+    <div id="counter-root"></div>
     <div id="gesture-hint" role="status" aria-live="polite" hidden></div>
 
     <div class="drawer" id="drawer">

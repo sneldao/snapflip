@@ -8,6 +8,7 @@ import {
   type StudioSpec,
 } from "./scene";
 import { createAudio } from "./audio";
+import { getCounterLot, mountCounterCheck } from "./counter-check";
 import { CHAPTERS, RAKING_THETA } from "./world/chapters";
 import { WorldController } from "./world/WorldController";
 import { ITEM_STEP, LAMP_STEP, focusCard, hintFor } from "./ux";
@@ -89,6 +90,7 @@ const state = {
   chapter: 0,
   selectedMarker: -1,
   splatOn: false,
+  glbOn: false,
   evidenceUnlocked: params.get("ev") !== null,
   introDone: params.get("demo") === "1" || params.has("ch"),
   listingDone: params.get("fast") === "1" || params.has("ch"),
@@ -115,6 +117,22 @@ const shared = decodeScene(params.get("scene"));
 if (shared) {
   state.spec = shared.spec;
   state.condition = shared.condition;
+}
+
+// Counter Check (?lot=07/08/09): a separate game mode in the same shell. The
+// lot plants its own condition and skips the listing/intro beats; the paper
+// evidence slip owns the UI while the Atelier lamp does the inspection.
+const counterLot = getCounterLot(params.get("lot"));
+if (counterLot) {
+  document.body.classList.add("counter-mode");
+  Object.assign(state, {
+    spec: { ...SAMPLE_SPEC, condition: counterLot.condition },
+    condition: counterLot.condition,
+    introDone: true,
+    listingDone: true,
+    // The lot plants its own condition; director params don't unlock here.
+    evidenceUnlocked: false,
+  });
 }
 
 // ---------- narrator, listing, boot ----------
@@ -219,9 +237,12 @@ function markerBindings() {
   return markerBtns.map((el, i) => ({ el, gated: i > 0 && !state.evidenceUnlocked }));
 }
 
-world?.setMarkers(markerBindings());
+// Counter Check binds one reticle to the item's evidence anchor; the legacy
+// marker buttons stay bound (and hidden) in normal play.
+world?.setMarkers(counterLot ? [{ el: el<HTMLElement>("counter-tell") }] : markerBindings());
 if (world) {
   world.onLampSettled = (side) => {
+    if (counterLot) return;
     if (side !== state.spec.lightSide) {
       haptic(10);
       commit({ spec: { ...state.spec, lightSide: side }, condition: state.condition }, "ui", "moved the light");
@@ -243,7 +264,7 @@ if (world) {
       did.rotate = true;
     } else {
       did.lamp = true;
-      if (!revealPlayed && state.condition !== "clean") {
+      if (!counterLot && !revealPlayed && state.condition !== "clean") {
         revealPlayed = true;
         track("reveal_damage");
         world?.pulse();
@@ -367,7 +388,7 @@ function stepChapter(dir: -1 | 1) {
 // ---------- rendering ----------
 
 const money = (cents: number) => `$${(cents / 100).toFixed(2)}`;
-const objectLabel = () => (state.splatOn ? "photo reconstruction (splat), demo" : `demo ${OBJECT_NAMES[state.spec.object]}`);
+const objectLabel = () => (state.splatOn ? "photo reconstruction (splat), demo" : state.glbOn ? "AI-generated model (Meshy), demo" : `demo ${OBJECT_NAMES[state.spec.object]}`);
 
 let capShown = -1;
 function setAppraisal(cents: number, eligible: boolean) {
@@ -501,7 +522,7 @@ let wheelLockUntil = 0;
 stageEl.addEventListener(
   "wheel",
   (e) => {
-    if (!e.shiftKey || CHAPTERS[state.chapter] === "inspect") return;
+    if (counterLot || !e.shiftKey || CHAPTERS[state.chapter] === "inspect") return;
     e.preventDefault();
     const now = performance.now();
     if (now < wheelLockUntil) return;
@@ -522,6 +543,9 @@ stageEl.addEventListener(
 // chapter elsewhere. [ and ] change chapter everywhere.
 window.addEventListener("keydown", (e) => {
   cancelDemo();
+  // Counter Check keeps its own controls; the slip's range is already
+  // keyboard-native, and chapter keys would leave the mode's single act.
+  if (counterLot) return;
   if (e.altKey || e.ctrlKey || e.metaKey) return;
   const t = e.target as HTMLElement;
   if (t.tagName === "TEXTAREA" || t.tagName === "INPUT") return;
@@ -716,25 +740,38 @@ function showError(msg: string) {
 
 syncChips();
 const chIdx = (CHAPTERS as readonly string[]).indexOf(params.get("ch") ?? "");
-goChapter(chIdx >= 0 ? chIdx : 0);
+goChapter(counterLot ? 1 : chIdx >= 0 ? chIdx : 0);
 const evIdx = Number.parseInt(params.get("ev") ?? "", 10);
 if (Number.isInteger(evIdx) && evIdx >= 0 && evIdx < markerBtns.length) {
   world?.setEvidenceFocus(evIdx);
 }
 render();
 
+// Counter Check keeps the procedural item: its scenario damage is authored
+// onto the proxy, so external skins are not attached in this mode.
 const envUrl = params.get("env");
-if (envUrl && world) {
+if (envUrl && world && !counterLot) {
   world.attachEnvSplat(envUrl);
 }
 
 const splatUrl = params.get("splat");
-if (splatUrl && world) {
+if (splatUrl && world && !counterLot) {
   world.attachSplat(splatUrl).then((ok) => {
     if (!ok) return;
     state.splatOn = true;
     const credit = params.get("credit");
     provBadge.textContent = credit ? `photo reconstruction · ${credit}` : "photo reconstruction";
+    render();
+  });
+}
+
+const glbUrl = params.get("glb");
+if (glbUrl && world && !counterLot) {
+  world.attachGlb(glbUrl).then((ok) => {
+    if (!ok) return;
+    state.glbOn = true;
+    const credit = params.get("credit");
+    provBadge.textContent = credit ? `AI-generated model · ${credit}` : "AI-generated model";
     render();
   });
 }
@@ -782,7 +819,7 @@ function demoBeats() {
   for (const [dt, fn] of steps) demoAfter(fn, dt);
 }
 
-if (params.get("demo") === "1" && world) {
+if (params.get("demo") === "1" && world && !counterLot) {
   if (!state.listingDone) {
     typeListing();
     demoAfter(enterWorld, 3400);
@@ -790,6 +827,27 @@ if (params.get("demo") === "1" && world) {
   } else {
     demoAfter(demoBeats, 1200);
   }
+}
+
+// Counter Check mounts once the boot has run; hooks read the live lamp, so a
+// missing renderer just falls back to the slip's own slider position.
+if (counterLot) {
+  const LAMP_MIN = RAKING_THETA.right;
+  const LAMP_SPAN = RAKING_THETA.left - RAKING_THETA.right;
+  const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
+  mountCounterCheck(el<HTMLDivElement>("counter-root"), counterLot, {
+    readSweep: () => (world ? clamp01((world.inspectionLampAngle - LAMP_MIN) / LAMP_SPAN) : null),
+    setSweep: (f) => world?.setInspectionLampAngle(LAMP_MIN + clamp01(f) * LAMP_SPAN),
+    onLock: () => {
+      el<HTMLElement>("counter-tell").classList.add("is-lit");
+      audio.tick(0);
+    },
+    onPin: () => {
+      world?.pulse();
+      audio.tick(0);
+    },
+    onCall: () => audio.gavel(),
+  });
 }
 
 if (params.has("debug") && world) {

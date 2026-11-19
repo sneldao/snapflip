@@ -20,6 +20,10 @@ TAG_BG = (240, 226, 168)
 TAG_INK = (28, 26, 20)
 
 OUT_TS = os.path.join(os.path.dirname(__file__), "..", "src", "web", "og-image.ts")
+# Recraft-generated rack artwork (assets/recraft/og-base-rack.webp). If present
+# the card composites type over it; otherwise it falls back to the flat
+# phosphor background.
+BASE_ART = os.path.join(os.path.dirname(__file__), "..", "assets", "recraft", "og-base-rack.webp")
 
 CANDIDATE_FONTS = [
     "/System/Library/Fonts/Andale Mono.ttf",
@@ -45,13 +49,45 @@ def glow_text(draw: ImageDraw.ImageDraw, xy, text, fnt, color, glow):
     draw.text((x, y), text, font=fnt, fill=color)
 
 
+def load_base() -> Image.Image:
+    """Cover-crop the rack artwork to 1200x630 and darken it for type legibility."""
+    art = Image.open(BASE_ART).convert("RGB")
+    scale = max(W / art.width, H / art.height)
+    art = art.resize((round(art.width * scale), round(art.height * scale)), Image.LANCZOS)
+    left = (art.width - W) // 2
+    top = max(0, (art.height - H) // 3)
+    art = art.crop((left, top, left + W, top + H))
+    # Global dim, plus a left-biased gradient so the headline block sits clean.
+    art = Image.blend(art, Image.new("RGB", (W, H), BG), 0.42)
+    mask = Image.new("L", (W, H), 0)
+    md = ImageDraw.Draw(mask)
+    for x in range(W):
+        a = max(0, round(170 - x * 0.28))
+        if a:
+            md.line([(x, 0), (x, H)], fill=a)
+    art.paste(Image.new("RGB", (W, H), (5, 3, 1)), (0, 0), mask)
+    return art
+
+
 def main() -> None:
-    img = Image.new("RGB", (W, H), BG)
+    has_art = os.path.exists(BASE_ART)
+    if has_art:
+        img = load_base()
+    else:
+        img = Image.new("RGB", (W, H), BG)
     d = ImageDraw.Draw(img)
 
-    # scanlines + vignette frame
-    for y in range(0, H, 4):
-        d.line([(0, y), (W, y)], fill=(0, 0, 0))
+    # scanlines + vignette frame (softer over the photo base)
+    if has_art:
+        lines = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        ld = ImageDraw.Draw(lines)
+        for y in range(0, H, 4):
+            ld.line([(0, y), (W, y)], fill=(0, 0, 0, 70))
+        img = Image.alpha_composite(img.convert("RGBA"), lines).convert("RGB")
+        d = ImageDraw.Draw(img)
+    else:
+        for y in range(0, H, 4):
+            d.line([(0, y), (W, y)], fill=(0, 0, 0))
     d.rectangle([8, 8, W - 9, H - 9], outline=DIM, width=3)
 
     f_small = font(44)

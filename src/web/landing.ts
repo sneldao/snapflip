@@ -614,12 +614,14 @@ landing.get("/", async (c) => {
       </div></section>
       <section class="tour-beat" id="t2"><div class="beat-card">
         <div class="k">01 · Snap — $6 tag</div>
+        <img src="/media/recraft/picker.webp" alt="A picker mid-reach into the rack, tag gun in hand" style="width:100%;border:1px solid var(--line-hi);border-radius:4px;margin-bottom:0.6rem" />
         <h2>Rack photo, 10 seconds</h2>
         <p>One photo at the rack. No listing, no fee, no hauling duds home.</p>
       </div></section>
       <section class="tour-beat" id="t3"><div class="beat-card">
         <div class="k">02 · AI IDs + grades</div>
         <h2>gb-pokemon-yellow-us · conf 0.97</h2>
+        <img src="/media/recraft/catalog-pokemon-cart.webp" alt="Pokemon Yellow cartridge" style="width:100%;border:1px solid var(--line-hi);border-radius:4px;margin:0.5rem 0" />
         <p>Grade B “light label wear” · not a repro. Repros are hard-rejected.</p>
         <div class="big" id="stage-price">$6</div>
         <div class="clock"><i id="clock-fill"></i></div>
@@ -995,7 +997,7 @@ landing.get("/", async (c) => {
       <div style="display:none"><span id="demand-top">$0</span><span id="collectors-top">0</span><span id="tx-top">0</span></div>
       ${soonRail}
       <p class="foot muted"><span class="blabel">Talk to us</span>Text the desk: <a href="sms:+16503156536">+1 650 315 6536</a> · Resellers: <a href="${tgUrl}">@snapflipbot</a> on Telegram<br />
-        <span class="blabel">Built with</span>Anthropic Claude · Featherless · Cloudflare Workers, D1, R2, Durable Objects · Stripe Connect · Brainbase<br />Built at Startup Speedrun · <a href="/?tour=1">take the scroll tour</a> · Archival footage: Moving Image Archive (public domain).</p>
+        <span class="blabel">Built with</span>Anthropic Claude · Featherless · Cloudflare Workers, D1, R2, Durable Objects · Stripe Connect · Brainbase<br />Built at Startup Speedrun · <a href="/?tour=1">take the scroll tour</a> · <a href="/studio">the inspection atelier</a> · <a href="/studio?lot=07">counter check</a> · Archival footage: Moving Image Archive (public domain).</p>
       ${tapeScript}
       ${statsScript}
       ${backdropScript}`,

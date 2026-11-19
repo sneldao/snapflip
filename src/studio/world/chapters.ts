@@ -709,6 +709,18 @@ export function buildChamber(): ChapterBuild {
   wall.rotation.y = Math.PI * 0.05;
   g.add(wall);
 
+  // "SOLD BEFORE YOU BUY IT" poster pinned to the curved wall, mid-arc.
+  const posterTex = new THREE.TextureLoader().load("/media/recraft/poster-sold-before-you-buy.webp");
+  posterTex.colorSpace = THREE.SRGBColorSpace;
+  const poster = new THREE.Mesh(
+    new THREE.PlaneGeometry(1.15, 1.53),
+    new THREE.MeshStandardMaterial({ map: posterTex, roughness: 0.95 }),
+  );
+  const posterTheta = Math.PI * 0.6 - Math.PI * 0.05; // wall-local arc minus wall rotation
+  poster.position.set(Math.sin(posterTheta) * 4.82, 1.45, -0.4 + Math.cos(posterTheta) * 4.82);
+  poster.lookAt(0, 1.45, -0.4);
+  g.add(poster);
+
   const podNames = ["MARA — COLLECTOR", "DEALER", "SNIPE", "CURATOR", "BROKER"];
   const signalMat = mats.signalOn();
   const signalOffMat = mats.signalOff();

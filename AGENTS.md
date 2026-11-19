@@ -21,14 +21,18 @@ deleted). Check `npx wrangler whoami` before deploying.
 - Commands: `npm run dev` (wrangler, builds studio first),
   `npm run check:studio` (strict DOM-lib typecheck of the client graph),
   `npm test`, `npm run lint`, `npm run deploy`.
-- `src/studio/client.ts`, `src/studio/audio.ts`, `src/studio/world/` are
-  DOM-only and excluded from the worker `tsconfig`; they're checked by
-  `check:studio` instead.
-- Deep-link params: `?ch=`, `?splat=`, `?credit=`, `?env=`, `?demo=1`
+- `src/studio/client.ts`, `src/studio/audio.ts`,
+  `src/studio/counter-check.ts`, and `src/studio/world/` are DOM-only and
+  excluded from the worker `tsconfig`; they're checked by `check:studio`
+  instead.
+- Deep-link params: `?ch=`, `?splat=`, `?glb=`, `?credit=`, `?env=`, `?demo=1`
   (`&loop=0` to hold), `?fx=0` (no post), `?gl2=1` (WebGL2 backend),
   `?gpu=0` (legacy WebGLRenderer), `?debug` (diagnostics incl. backend),
   `?fast=1` (skip listing cold-open), `?cond=` + `?rule=1` + `?claim=`
-  (director's mode — plant hidden condition vs the seller's claim).
+  (director's mode — plant hidden condition vs the seller's claim),
+  `?lot=07|08|09` (Counter Check — paper evidence-slip mode over the same
+  Atelier; procedural item only, legacy HUD suppressed via
+  `body.counter-mode`, see `src/studio/counter-check.ts`).
 - Plan: `docs/studio/STRATEGY.md`. Running status of what's built and
   verified: `docs/studio/STATUS.md` — update STATUS as work lands, not
   STRATEGY.

@@ -136,3 +136,44 @@ Still open:
   asset-rights and cost decision.
 - Hover, keyboard, touch, and demo timing have not been checked in a browser.
 
+
+## Counter Check (new mode) — `?lot=07|08|09`
+
+A separate game mode inside the same Studio shell: a counter examiner's
+paper evidence slip (`src/studio/counter-check.ts`) clipped over the
+Atelier. Three fixed fictional lots (07 worn / 08 torn / 09 clean), each
+with a planted condition, a seller claim, and a hidden lamp-angle "tell".
+
+- `mountCounterCheck(root, lot, hooks)` renders the slip; hooks bridge to
+  the world (`readSweep`/`setSweep` over `WorldController.inspectionLampAngle`
+  / `setInspectionLampAngle`, normalized to the RAKING_THETA right→left arc
+  0..1, `onLock` on latch, `onPin`, `onCall`). No renderer → `readSweep`
+  returns null and the slip's own slider drives the scan.
+- Layout: the render rect is scoped, not overlaid — `body.counter-mode
+  #stage` loses `right: min(410px, 42vw)` to the slip column; ≤860px the
+  stage keeps the top 46dvh band and the slip sits under it, so the item
+  is never behind the paper.
+- The tell: `#counter-tell` (in `#stage`) is a mint circle+bracket reticle
+  positioned by the real MarkerLayer on the item's evidence anchor —
+  hidden until the lock latches, occlusion-safe via the layer's own
+  raycast, `pointer-events: none`. `onLock` lights it + ticks.
+- Scan: RAF only while scanning and only until the latch; strength
+  `1 - |f - target| / 0.18`, hold ≥0.65 for 450ms capped-delta; hidden
+  tabs bank nothing (`dt=0`, hold drains). "Stamp the evidence" gated on
+  the lock. Calls are always available — blind calls are allowed and the
+  receipt says so.
+- Receipt: deterministic settle (buy $38 / haggle $28+$8 / pass), signed
+  net (`$0` unsigned), why, best play derived from `settle`, evidence-vs-
+  blind mark; heading focused on call (gavel). Call row is three equal
+  columns (Buy $38 / Haggle $28 / Pass) — visible at 390×760 without
+  scrolling. Share = native share → clipboard → readonly URL; same-origin
+  `/studio?lot=…` only. Next-lot link wraps 07→08→09→07 (footer next
+  hidden once called; receipt keeps its own); "studio" exits the mode.
+- Client: `?lot=` adds `body.counter-mode` (CSS hides topbar/nav/cards/
+  markers/listing/drawer/beat/hint/toast; boot and diag stay, the fallback
+  notice re-anchors inside the stage rect labelled staged), forces
+  chapter 1, plants the lot condition with `evidenceUnlocked:false` so
+  director params don't leak, and bypasses lamp-settle commits, the drag
+  auto-proof, legacy keys/shift-wheel, demo autopilot, and external
+  env/splat/GLB attachments. Landing footer + studio nav carry entry links.
+- Best plays: 07 haggle +$6 · 08 pass $0 · 09 buy +$27.

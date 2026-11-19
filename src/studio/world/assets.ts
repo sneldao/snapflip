@@ -27,46 +27,52 @@ function labelTexture(spec: StudioSpec, cond: StudioCondition): THREE.CanvasText
   c.width = 512;
   c.height = 288;
   const g = c.getContext("2d");
-  if (!g) return new THREE.CanvasTexture(c);
-  g.fillStyle = "#dfd2a8";
-  g.fillRect(0, 0, 512, 288);
-  for (let i = 0; i < 240; i++) {
-    const x = (i * 37) % 512;
-    const y = (i * 53) % 288;
-    g.fillStyle = `rgba(${i % 2 ? "120,100,60" : "255,250,230"},${0.05 + (i % 3) * 0.03})`;
-    g.fillRect(x, y, 1 + (i % 3), 1);
-  }
-  const age = g.createRadialGradient(256, 144, 90, 256, 144, 330);
-  age.addColorStop(0, "rgba(120,90,30,0)");
-  age.addColorStop(1, "rgba(120,90,30,0.16)");
-  g.fillStyle = age;
-  g.fillRect(0, 0, 512, 288);
-  g.fillStyle = "#b8903f";
-  g.fillRect(0, 0, 512, 44);
-  g.fillStyle = "#1c140a";
-  g.font = "900 34px monospace";
-  g.fillText(spec.title.slice(0, 30).toUpperCase(), 24, 92, 464);
-  g.font = "400 20px monospace";
-  g.fillStyle = "#3f3212";
-  g.fillText("SAMPLE ITEM — SCENARIO, UNVERIFIED", 24, 132);
-  g.strokeStyle = "#7a6230";
-  g.lineWidth = 2;
-  g.strokeRect(14, 14, 484, 260);
-  g.beginPath();
-  g.arc(452, 216, 30, 0, Math.PI * 2);
-  g.fillStyle = "#efe6c8";
-  g.fill();
-  g.strokeStyle = "#a03428";
-  g.lineWidth = 3;
-  g.stroke();
-  g.fillStyle = "#a03428";
-  g.font = "700 20px monospace";
-  g.textAlign = "center";
-  g.fillText("LOT", 452, 212);
-  g.font = "900 26px monospace";
-  g.fillText("07", 452, 238);
-  g.textAlign = "left";
-  if (cond !== "clean") {
+  const tex = new THREE.CanvasTexture(c);
+  if (!g) return tex;
+  const drawOverlays = () => {
+    g.fillStyle = "#b8903f";
+    g.fillRect(0, 0, 512, 44);
+    g.fillStyle = "#1c140a";
+    g.font = "900 34px monospace";
+    g.fillText(spec.title.slice(0, 30).toUpperCase(), 24, 92, 464);
+    g.font = "400 20px monospace";
+    g.fillStyle = "#3f3212";
+    g.fillText("SAMPLE ITEM — SCENARIO, UNVERIFIED", 24, 132);
+    g.strokeStyle = "#7a6230";
+    g.lineWidth = 2;
+    g.strokeRect(14, 14, 484, 260);
+    g.beginPath();
+    g.arc(452, 216, 30, 0, Math.PI * 2);
+    g.fillStyle = "#efe6c8";
+    g.fill();
+    g.strokeStyle = "#a03428";
+    g.lineWidth = 3;
+    g.stroke();
+    g.fillStyle = "#a03428";
+    g.font = "700 20px monospace";
+    g.textAlign = "center";
+    g.fillText("LOT", 452, 212);
+    g.font = "900 26px monospace";
+    g.fillText("07", 452, 238);
+    g.textAlign = "left";
+  };
+  const drawBase = () => {
+    g.fillStyle = "#dfd2a8";
+    g.fillRect(0, 0, 512, 288);
+    for (let i = 0; i < 240; i++) {
+      const x = (i * 37) % 512;
+      const y = (i * 53) % 288;
+      g.fillStyle = `rgba(${i % 2 ? "120,100,60" : "255,250,230"},${0.05 + (i % 3) * 0.03})`;
+      g.fillRect(x, y, 1 + (i % 3), 1);
+    }
+    const age = g.createRadialGradient(256, 144, 90, 256, 144, 330);
+    age.addColorStop(0, "rgba(120,90,30,0)");
+    age.addColorStop(1, "rgba(120,90,30,0.16)");
+    g.fillStyle = age;
+    g.fillRect(0, 0, 512, 288);
+  };
+  const drawWear = () => {
+    if (cond === "clean") return;
     g.strokeStyle = "rgba(90, 74, 30, 0.55)";
     for (let i = 0; i < (cond === "torn" ? 14 : 6); i++) {
       const x = 40 + ((i * 73) % 430);
@@ -78,22 +84,33 @@ function labelTexture(spec: StudioSpec, cond: StudioCondition): THREE.CanvasText
     }
     g.fillStyle = "rgba(60, 50, 20, 0.12)";
     g.fillRect(300, 150, 190, 110);
-  }
-  if (cond === "torn") {
-    g.fillStyle = `#${SHELL_COLORS[spec.shellColor].toString(16).padStart(6, "0")}`;
-    g.beginPath();
-    g.moveTo(400, 10);
-    g.lineTo(502, 10);
-    g.lineTo(502, 100);
-    g.closePath();
-    g.fill();
-    g.strokeStyle = "rgba(60, 50, 20, 0.4)";
-    g.beginPath();
-    g.moveTo(400, 10);
-    g.lineTo(502, 100);
-    g.stroke();
-  }
-  const tex = new THREE.CanvasTexture(c);
+    if (cond === "torn") {
+      g.fillStyle = `#${SHELL_COLORS[spec.shellColor].toString(16).padStart(6, "0")}`;
+      g.beginPath();
+      g.moveTo(400, 10);
+      g.lineTo(502, 10);
+      g.lineTo(502, 100);
+      g.closePath();
+      g.fill();
+      g.strokeStyle = "rgba(60, 50, 20, 0.4)";
+      g.beginPath();
+      g.moveTo(400, 10);
+      g.lineTo(502, 100);
+      g.stroke();
+    }
+  };
+  drawBase();
+  drawOverlays();
+  drawWear();
+  const kraft = new Image();
+  kraft.onload = () => {
+    g.clearRect(0, 0, 512, 288);
+    g.drawImage(kraft, 0, (kraft.height - kraft.width / (512 / 288)) / 2, kraft.width, kraft.width / (512 / 288), 0, 0, 512, 288);
+    drawOverlays();
+    drawWear();
+    tex.needsUpdate = true;
+  };
+  kraft.src = "/media/recraft/label-kraft.webp";
   tex.anisotropy = 4;
   return tex;
 }

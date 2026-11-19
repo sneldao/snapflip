@@ -478,6 +478,19 @@ export class WorldController {
     this.onDrag?.("lamp");
   }
 
+  // Counter Check drives the lamp from a DOM sweep control over the same
+  // clamped arc as a drag — the slider and the world light cannot disagree.
+  get inspectionLampAngle() {
+    return this.lampTheta;
+  }
+
+  setInspectionLampAngle(theta: number) {
+    this.lampTween = null;
+    this.lampUserTheta = clampLampTheta(theta);
+    this.revealLamp();
+    this.setLampNow(this.lampUserTheta);
+  }
+
   chapter() {
     return CHAPTERS[this.currentChapter];
   }
@@ -572,12 +585,45 @@ export class WorldController {
     if (!this.reducedMotion) {
       const target = splat.scale.x;
       splat.scale.setScalar(0.001);
-      this.splatPop = { t0: performance.now(), target };
+      this.mountedPop = { obj: splat, t0: performance.now(), target };
     }
     return true;
   }
 
-  private splatPop: { t0: number; target: number } | null = null;
+  private mountedPop: { obj: THREE.Object3D; t0: number; target: number } | null = null;
+
+  // Mounts a generated GLB as the item's visual skin — the Meshy/AI-model path,
+  // same swap semantics as attachSplat: procedural proxy stays in the graph
+  // (invisible) so anchors, raycast occlusion, and drag keep working.
+  async attachGlb(url: string): Promise<boolean> {
+    const { GLTFLoader } = await import("three/addons/loaders/GLTFLoader.js");
+    const gltf = await new Promise<{ scene: THREE.Object3D } | null>((res) => {
+      new GLTFLoader().load(url, (g) => res(g as { scene: THREE.Object3D }), undefined, () => res(null));
+    });
+    if (!gltf || this.disposed) return false;
+    const obj = gltf.scene;
+    const sbox = new THREE.Box3().setFromObject(obj);
+    const tbox = new THREE.Box3().setFromObject(this.item.group);
+    if (sbox.isEmpty() || tbox.isEmpty()) return false;
+    const ssize = sbox.getSize(new THREE.Vector3());
+    const tsize = tbox.getSize(new THREE.Vector3());
+    const scale = Math.min(...[ssize.x, ssize.y, ssize.z].map((s, i) => (s > 0 ? tsize.getComponent(i) / s : Infinity)));
+    if (!Number.isFinite(scale) || scale <= 0) return false;
+    obj.scale.setScalar(scale);
+    const scenter = sbox.getCenter(new THREE.Vector3());
+    const tcenter = this.item.group.worldToLocal(tbox.getCenter(new THREE.Vector3()));
+    obj.position.copy(tcenter).sub(scenter.multiplyScalar(scale));
+    this.item.group.traverse((o) => {
+      if ((o as THREE.Mesh).isMesh) o.visible = false;
+    });
+    this.item.group.add(obj);
+    if (!this.reducedMotion) {
+      const target = obj.scale.x;
+      obj.scale.setScalar(0.001);
+      this.mountedPop = { obj, t0: performance.now(), target };
+    }
+    return true;
+  }
 
   private envSplat: THREE.Mesh | null = null;
 
@@ -729,14 +775,14 @@ export class WorldController {
         this.splat.rotation.y = this.splatYaw.from + (this.splatYaw.to - this.splatYaw.from) * k;
       }
     }
-    if (this.splatPop && this.splat) {
-      const p = Math.min(1, (now - this.splatPop.t0) / 700);
+    if (this.mountedPop) {
+      const p = Math.min(1, (now - this.mountedPop.t0) / 700);
       if (p >= 1) {
-        this.splat.scale.setScalar(this.splatPop.target);
-        this.splatPop = null;
+        this.mountedPop.obj.scale.setScalar(this.mountedPop.target);
+        this.mountedPop = null;
       } else {
         const k = 1 + 2.7 * Math.pow(p - 1, 3) + 1.7 * Math.pow(p - 1, 2);
-        this.splat.scale.setScalar(Math.max(0.001, this.splatPop.target * k));
+        this.mountedPop.obj.scale.setScalar(Math.max(0.001, this.mountedPop.target * k));
       }
     }
     if (this.keyGain !== this.keyGainTarget) {
